@@ -4,6 +4,10 @@ __pycache__/
 *.db
 *.db-journal
 
+# Secrets — never commit the real .env
+.env
+!.env.example
+
 # Runtime directories (content, not the dirs themselves)
 outputs/*
 temp/*

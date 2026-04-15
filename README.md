@@ -1,47 +1,83 @@
 # Card Enhancer AI
 
-A production-quality card image enhancement web application built with FastAPI. Upload trading cards, business cards, or any images as a ZIP archive — they're upscaled, sharpened, denoised, and color-corrected through an OpenCV + Pillow pipeline, with real-time progress via WebSocket.
+A production-quality card image enhancement web application built with FastAPI. Upload trading cards, business cards, or any images as a ZIP archive — they're upscaled, sharpened, denoised, and color-corrected with real-time progress via WebSocket.
 
-100 % local. Zero cloud dependencies. Zero telemetry.
+Two backends:
+
+| Backend | How it works | Tokens needed? |
+|---|---|---|
+| **OpenCV + Pillow (CPU)** | Lanczos upscale, CLAHE, unsharp mask, denoise — all local | No |
+| **LaMa + SwinIR + Real-ESRGAN (API)** | Auto scratch removal, transformer denoising, neural 4x upscale | HF + Replicate |
 
 ---
 
 ## Features
 
 - **Batch processing** — upload up to 3 000 images in a single ZIP (max 2 GB)
-- **Enhancement pipeline** — Lanczos upscaling, adaptive sharpening (unsharp mask), fast non-local means denoising, CLAHE contrast, and color saturation correction
+- **Two enhancement backends** — pure local OpenCV or AI-powered API pipeline (LaMa → SwinIR → Real-ESRGAN)
+- **Auto scratch detection** — edge-detection based mask generation feeds LaMa for targeted inpainting
+- **Card crop** — OpenCV contour detection auto-crops and perspective-corrects trading cards
 - **5 built-in presets** — Mint Card, Worn Card, Damaged Card, Web Ready, Print Ready
-- **Custom settings** — choose upscale factor (2×/4×/8×), output format (PNG/JPEG/WebP/TIFF), quality, denoise strength, and toggle each pipeline stage
+- **Custom settings** — upscale factor (2×/4×/8×), output format (PNG/JPEG/WebP/TIFF), quality, denoise strength, and per-stage toggles
 - **Real-time progress** — WebSocket pushes per-image status to the browser
 - **Before / After compare** — slider overlay in the results view
-- **Async throughout** — non-blocking I/O with `async/await`, background thread pool for CPU-bound OpenCV work
+- **Async throughout** — non-blocking I/O with `async/await`, background thread pool for CPU-bound work
 - **SQLite job store** — persistent job metadata via SQLAlchemy async ORM
-- **Polished dark UI** — Alpine.js + Tailwind CSS, drag-and-drop upload, grid gallery, filmstrip navigation
+- **Graceful fallback** — if API tokens are missing or any pipeline stage fails, the next stage continues with the previous result
 
 ---
 
 ## Quick Start
 
+### Local-only mode (no tokens needed)
+
 ```bash
-# Clone
 git clone https://github.com/Nietzsche-Ubermensch/card-enhancer.git
 cd card-enhancer
 
-# Install dependencies (Python 3.10+)
 pip install -r requirements.txt
 
-# Run
+cp .env.example .env
+# defaults to UPSCALE_BACKEND=opencv — works out of the box
+
 python run.py
 ```
 
-Open **http://localhost:8000** — drop a ZIP of images and pick a preset.
+Open **http://localhost:8000**.
 
-### Environment Variables
+### AI pipeline mode (API tokens required)
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env`:
+
+```ini
+HF_API_TOKEN=hf_your_token_here
+REPLICATE_API_TOKEN=r8_your_token_here
+UPSCALE_BACKEND=realesrgan
+```
+
+Get tokens at:
+- **Hugging Face**: [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) (free)
+- **Replicate**: [replicate.com/account/api-tokens](https://replicate.com/account/api-tokens) (pay-per-use, ~$0.005/image)
+
+Then `python run.py` — the header badge will show `LaMa + SwinIR + Real-ESRGAN (API)`.
+
+If either token is missing, the app logs a warning and falls back to the OpenCV backend automatically.
+
+---
+
+## Environment Variables
 
 All optional. Set in `.env` or export before running.
 
 | Variable | Default | Description |
 |---|---|---|
+| `UPSCALE_BACKEND` | `realesrgan` | `realesrgan` for the AI pipeline, `opencv` for local-only |
+| `HF_API_TOKEN` | _(empty)_ | Hugging Face token (required for `realesrgan` backend) |
+| `REPLICATE_API_TOKEN` | _(empty)_ | Replicate token (required for `realesrgan` backend) |
 | `DEBUG` | `false` | Enable debug logging and hot-reload |
 | `HOST` | `0.0.0.0` | Bind address |
 | `PORT` | `8000` | Bind port |
@@ -57,7 +93,7 @@ All optional. Set in `.env` or export before running.
 ```
 card-enhancer/
 ├── run.py                     ← Uvicorn entrypoint
-├── .env                       ← Runtime configuration
+├── .env.example               ← Config template (copy to .env)
 ├── requirements.txt           ← Pinned PyPI dependencies
 │
 ├── app/
@@ -76,9 +112,10 @@ card-enhancer/
 │   │
 │   ├── services/
 │   │   ├── upscalers/
-│   │   │   ├── __init__.py    ← Backend registry (get_upscaler / get_backend_name)
-│   │   │   └── opencv_backend.py  ← OpenCV + Pillow enhancement pipeline
-│   │   ├── enhancement_service.py ← Orchestrates upscaler calls
+│   │   │   ├── __init__.py    ← Backend registry with automatic fallback
+│   │   │   ├── opencv_backend.py      ← Local OpenCV + Pillow pipeline
+│   │   │   └── realesrgan_backend.py  ← LaMa + SwinIR + Real-ESRGAN API pipeline
+│   │   ├── enhancement_service.py     ← Orchestrates upscaler calls
 │   │   └── job_service.py     ← Job CRUD: create, get, update, add_result, stats
 │   │
 │   ├── workers/
@@ -94,10 +131,30 @@ card-enhancer/
 │       ├── logger.py          ← JSON structured logging
 │       └── file_utils.py      ← ZIP extraction, path safety, format_bytes
 │
-├── uploads/                   ← (runtime) raw uploads
+├── outputs/                   ← (runtime) enhanced images per job
 ├── temp/                      ← (runtime) working directory per job
-└── outputs/                   ← (runtime) enhanced images per job
+└── uploads/                   ← (runtime) raw uploads
 ```
+
+### Enhancement Pipelines
+
+**OpenCV backend** (local, no network):
+
+```
+Image → Lanczos upscale → fastNlMeansDenoising → CLAHE contrast → Unsharp mask → Color boost → Output
+```
+
+**Real-ESRGAN backend** (API-powered):
+
+```
+Image → Card crop (contour detection)
+      → LaMa scratch removal (auto-mask via edge detection)
+      → SwinIR denoising (HF Inference API, padded to 8x multiples)
+      → Real-ESRGAN 4x upscale (Replicate)
+      → Output
+```
+
+Each stage is wrapped in try/except — if it fails, the pipeline continues with the previous result.
 
 ### Request Flow
 
@@ -112,27 +169,15 @@ Browser                    FastAPI                  Worker Thread
   │                          │   Poller picks up job ──►│
   │                          │                          ├─ Extract ZIP
   │                          │                          ├─ For each image:
-  │                          │◄── WS push { progress } ─┤   upscale → denoise
-  │◄── real-time updates ────┤                          │   → CLAHE → sharpen
-  │                          │                          │   → color correct
-  │                          │                          │   → write output
+  │                          │◄── WS push { progress } ─┤   run selected
+  │◄── real-time updates ────┤                          │   backend pipeline
+  │                          │                          │
   │                          │◄── WS push { completed }─┤
   │◄── "completed" ─────────┤                          │
   │                          │                          │
   ├─ GET /v1/image/{job}/{f}─►  Serve enhanced file     │
   │◄── image bytes ──────────┤                          │
 ```
-
-### Enhancement Pipeline
-
-Each image passes through up to 6 stages (configurable per preset):
-
-1. **Lanczos upscale** — `cv2.INTER_LANCZOS4` resize to target dimensions
-2. **Denoise** — `cv2.fastNlMeansDenoisingColored` (low / medium / high strength)
-3. **CLAHE contrast** — adaptive histogram equalization on the L channel in LAB color space
-4. **Unsharp mask sharpen** — Gaussian blur subtraction with configurable strength
-5. **Color saturation boost** — Pillow `ImageEnhance.Color` at 1.15×
-6. **Format-aware write** — PNG, JPEG (quality param), WebP (quality param), or TIFF
 
 ---
 
@@ -170,9 +215,9 @@ Base URL: `http://localhost:8000`
 
 | Endpoint | Description |
 |---|---|
-| `WS /v1/ws/{job_id}` | Real-time job progress. Sends JSON frames with `status`, `progress`, `message`, `completed_images`, `failed_images`, `total_images`. Accepts `{"action": "cancel"}` to cancel. |
+| `WS /v1/ws/{job_id}` | Real-time job progress. Sends JSON with `status`, `progress`, `message`, `completed_images`, `failed_images`, `total_images`. Accepts `{"action": "cancel"}` to cancel. |
 
-### Upload Example
+### Upload Examples
 
 ```bash
 # Using a preset
@@ -186,62 +231,17 @@ curl -X POST http://localhost:8000/v1/batch/upload \
   -F 'settings_json={"upscale_factor":4,"format":"png","denoise":true,"denoise_strength":"high","sharpen":true,"sharpen_strength":0.7,"auto_contrast":true,"color_correct":true,"quality":95}'
 ```
 
-### Response Schemas
-
-<details>
-<summary><strong>UploadResponse</strong></summary>
-
-```json
-{
-  "job_id": "abc123...",
-  "status": "pending",
-  "message": "Queued for processing",
-  "total_files": 0,
-  "accepted_files": 0,
-  "rejected_files": 0
-}
-```
-</details>
-
-<details>
-<summary><strong>JobStatusResponse</strong></summary>
-
-```json
-{
-  "job_id": "abc123...",
-  "status": "completed",
-  "progress": 100,
-  "total_images": 3,
-  "completed_images": 3,
-  "failed_images": 0,
-  "results": [
-    {
-      "filename": "card_enhanced.png",
-      "original_size": "3.3 KB",
-      "enhanced_size": "236.6 KB",
-      "status": "completed",
-      "processing_time_ms": 122
-    }
-  ],
-  "message": "Done in 0.2s — 3 ok, 0 failed",
-  "backend_used": "OpenCV + Pillow (CPU)",
-  "created_at": "2026-04-15T05:23:24.167248",
-  "elapsed_seconds": 2.06
-}
-```
-</details>
-
 ---
 
 ## Presets
 
 | Preset | Scale | Denoise | Sharpen | Contrast | Color | Format | Use Case |
 |---|---|---|---|---|---|---|---|
-| `mint_card` | 2× | Off | 0.3 | CLAHE | Off | PNG | Near-mint cards, minimal touch-up |
-| `worn_card` | 4× | Medium | 0.6 | CLAHE | On | PNG | Moderate wear, restore edges and color |
-| `damaged_card` | 4× | High | 0.8 | CLAHE | On | PNG | Heavy damage, aggressive restoration |
-| `web_ready` | 2× | Low | 0.4 | CLAHE | On | WebP | Optimized for web, smaller file size |
-| `print_ready` | 4× | Medium | 0.5 | Off | On | TIFF | High-res archival or print |
+| `mint_card` | 2x | Off | 0.3 | CLAHE | Off | PNG | Near-mint cards, minimal touch-up |
+| `worn_card` | 4x | Medium | 0.6 | CLAHE | On | PNG | Moderate wear, restore edges and color |
+| `damaged_card` | 4x | High | 0.8 | CLAHE | On | PNG | Heavy damage, aggressive restoration |
+| `web_ready` | 2x | Low | 0.4 | CLAHE | On | WebP | Optimized for web, smaller file size |
+| `print_ready` | 4x | Medium | 0.5 | Off | On | TIFF | High-res archival or print |
 
 ---
 
@@ -256,8 +256,20 @@ python-multipart==0.0.20   aiofiles==24.1.0
 sqlalchemy[asyncio]==2.0.41 aiosqlite==0.21.0
 pillow==11.2.1             opencv-python-headless==4.11.0.86
 numpy>=1.24,<2.0           websockets==15.0.1
-jinja2==3.1.6
+jinja2==3.1.6              httpx==0.27.0
+replicate==1.0.4           huggingface_hub==0.27.0
 ```
+
+---
+
+## GitHub Actions
+
+The repo includes `.github/workflows/deploy.yml`. To use it, add your tokens as repository secrets:
+
+1. Go to **Settings > Secrets and variables > Actions**
+2. Add `HF_API_TOKEN` and `REPLICATE_API_TOKEN`
+
+The workflow installs deps, verifies secrets are loaded, and starts the app for a health check on every push to `main`.
 
 ---
 

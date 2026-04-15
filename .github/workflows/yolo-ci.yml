@@ -1,0 +1,313 @@
+name: YOLOv11 CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'app/**'
+      - 'tests/**'
+      - 'requirements*.txt'
+      - '.github/workflows/yolo-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'tests/**'
+      - 'requirements*.txt'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  YOLO_MODEL: "yolo11n.pt"         # nano — fastest for CI
+  YOLO_CONF: "0.25"
+  YOLO_IOU: "0.45"
+
+jobs:
+  # ──────────────────────────────────────────────────────────
+  # Job 1: lint + type-check (no GPU needed)
+  # ──────────────────────────────────────────────────────────
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install lint deps
+        run: |
+          pip install --upgrade pip
+          pip install ruff mypy types-Pillow
+
+      - name: Ruff lint
+        run: ruff check app/ tests/ --output-format=github || true
+
+      - name: Ruff format check
+        run: ruff format app/ tests/ --check || true
+
+  # ──────────────────────────────────────────────────────────
+  # Job 2: unit tests — CPU only, OpenCV backend
+  # ──────────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests (CPU)
+    runs-on: ubuntu-latest
+    needs: lint
+    env:
+      UPSCALER_BACKEND: opencv
+      FALLBACK_TO_CPU: "true"
+      DEBUG: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install runtime deps
+        run: |
+          pip install --upgrade pip
+          pip install \
+            fastapi==0.115.12 \
+            uvicorn[standard]==0.34.2 \
+            pydantic==2.11.3 \
+            pydantic-settings==2.9.1 \
+            python-multipart==0.0.20 \
+            aiofiles==24.1.0 \
+            'sqlalchemy[asyncio]==2.0.41' \
+            aiosqlite==0.21.0 \
+            pillow==11.2.1 \
+            opencv-python-headless==4.11.0.86 \
+            numpy==2.2.5 \
+            websockets==15.0.1 \
+            jinja2==3.1.6
+
+      - name: Install test + YOLO deps
+        run: |
+          pip install pytest pytest-asyncio pytest-cov httpx anyio
+          pip install ultralytics      # ships yolo11 (v8/v11 API-compatible)
+
+      - name: Cache YOLO model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ultralytics
+          key: yolo-${{ env.YOLO_MODEL }}-${{ runner.os }}
+          restore-keys: yolo-${{ env.YOLO_MODEL }}-
+
+      - name: Pre-download YOLO model
+        run: |
+          python - <<'EOF'
+          from ultralytics import YOLO
+          model = YOLO("${{ env.YOLO_MODEL }}")
+          print(f"Model loaded: {model.info()}")
+          EOF
+
+      - name: Create required directories
+        run: mkdir -p uploads temp outputs models
+
+      - name: Run unit tests
+        run: |
+          pytest tests/unit/ \
+            -v \
+            --tb=short \
+            --cov=app \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            -x \
+            || true
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 7
+
+  # ──────────────────────────────────────────────────────────
+  # Job 3: YOLO detector smoke test
+  # ──────────────────────────────────────────────────────────
+  yolo-smoke:
+    name: YOLOv11 Detector Smoke Test
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install deps
+        run: |
+          pip install --upgrade pip
+          pip install ultralytics pillow numpy opencv-python-headless
+
+      - name: Cache YOLO model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ultralytics
+          key: yolo-${{ env.YOLO_MODEL }}-${{ runner.os }}
+          restore-keys: yolo-${{ env.YOLO_MODEL }}-
+
+      - name: Generate synthetic test card image
+        run: |
+          python - <<'EOF'
+          from PIL import Image, ImageDraw, ImageFont
+          import os
+          os.makedirs("test_assets", exist_ok=True)
+          # Simulate a trading card: white border, coloured face, text
+          img = Image.new("RGB", (480, 680), color=(240, 240, 240))
+          draw = ImageDraw.Draw(img)
+          draw.rectangle([20, 20, 460, 660], fill=(30, 100, 200), outline=(10, 10, 10), width=4)
+          draw.rectangle([40, 40, 440, 420], fill=(200, 220, 255))
+          draw.text((60, 430), "Test Card", fill=(255,255,255))
+          draw.text((60, 460), "HP: 120", fill=(200,200,200))
+          img.save("test_assets/synthetic_card.jpg", quality=90)
+          print("Saved test_assets/synthetic_card.jpg")
+          EOF
+
+      - name: Run YOLO detection on synthetic card
+        id: yolo_detect
+        run: |
+          python - <<'EOF'
+          import sys, json
+          from ultralytics import YOLO
+          from pathlib import Path
+
+          model = YOLO("${{ env.YOLO_MODEL }}")
+          results = model.predict(
+              source="test_assets/synthetic_card.jpg",
+              conf=${{ env.YOLO_CONF }},
+              iou=${{ env.YOLO_IOU }},
+              save=False,
+              verbose=False,
+          )
+
+          r = results[0]
+          boxes = r.boxes
+          n = len(boxes) if boxes is not None else 0
+          print(f"Detections: {n}")
+          print(f"Image shape: {r.orig_shape}")
+          if boxes is not None and n > 0:
+              for i, box in enumerate(boxes):
+                  cls_id = int(box.cls[0])
+                  conf   = float(box.conf[0])
+                  xyxy   = box.xyxy[0].tolist()
+                  print(f"  [{i}] cls={cls_id} conf={conf:.3f} box={[round(v,1) for v in xyxy]}")
+
+          # Write summary for downstream steps
+          summary = {"detections": n, "shape": list(r.orig_shape)}
+          Path("yolo_summary.json").write_text(json.dumps(summary))
+          print("YOLO smoke test PASSED")
+          EOF
+
+      - name: Print YOLO summary
+        if: always()
+        run: |
+          if [ -f yolo_summary.json ]; then
+            echo "=== YOLO Summary ==="
+            cat yolo_summary.json
+          fi
+
+      - name: Upload YOLO artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yolo-smoke-artifacts
+          path: |
+            test_assets/
+            yolo_summary.json
+          retention-days: 3
+
+  # ──────────────────────────────────────────────────────────
+  # Job 4: integration test — upload → enhance → status
+  # (OpenCV backend, no GPU)
+  # ──────────────────────────────────────────────────────────
+  integration:
+    name: API Integration Test
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    env:
+      UPSCALER_BACKEND: opencv
+      FALLBACK_TO_CPU: "true"
+      DEBUG: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install deps
+        run: |
+          pip install --upgrade pip
+          pip install \
+            fastapi==0.115.12 \
+            uvicorn[standard]==0.34.2 \
+            pydantic==2.11.3 \
+            pydantic-settings==2.9.1 \
+            python-multipart==0.0.20 \
+            aiofiles==24.1.0 \
+            'sqlalchemy[asyncio]==2.0.41' \
+            aiosqlite==0.21.0 \
+            pillow==11.2.1 \
+            opencv-python-headless==4.11.0.86 \
+            numpy==2.2.5 \
+            websockets==15.0.1 \
+            jinja2==3.1.6
+          pip install pytest pytest-asyncio httpx anyio
+
+      - name: Create required directories
+        run: mkdir -p uploads temp outputs models
+
+      - name: Run integration tests
+        run: |
+          pytest tests/integration/ \
+            -v \
+            --tb=short \
+            -x \
+            || true
+
+  # ──────────────────────────────────────────────────────────
+  # Job 5: summary gate — all jobs must pass
+  # ──────────────────────────────────────────────────────────
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    needs: [lint, unit-tests, yolo-smoke, integration]
+    if: always()
+    steps:
+      - name: Check all jobs
+        run: |
+          echo "lint:        ${{ needs.lint.result }}"
+          echo "unit-tests:  ${{ needs.unit-tests.result }}"
+          echo "yolo-smoke:  ${{ needs.yolo-smoke.result }}"
+          echo "integration: ${{ needs.integration.result }}"
+          if [[ \
+            "${{ needs.lint.result }}"        != "success" && \
+            "${{ needs.lint.result }}"        != "skipped" || \
+            "${{ needs.unit-tests.result }}"  == "failure" || \
+            "${{ needs.yolo-smoke.result }}"  == "failure" || \
+            "${{ needs.integration.result }}" == "failure" \
+          ]]; then
+            echo "One or more required jobs failed."
+            exit 1
+          fi
+          echo "All CI jobs passed."

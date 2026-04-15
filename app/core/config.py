@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     CLEANUP_AFTER_HOURS: int = 48
     DATABASE_URL: str = "sqlite+aiosqlite:///./jobs.db"
 
+    # --- API tokens ---
+    HF_API_TOKEN: str = ""
+    REPLICATE_API_TOKEN: str = ""
+    UPSCALE_BACKEND: str = "realesrgan"
+
     PRESETS: Dict[str, Dict] = Field(default_factory=lambda: {
         "mint_card": {
             "upscale_factor": 2, "denoise": False,

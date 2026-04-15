@@ -27,14 +27,12 @@ class RealESRGANBackend:
 
     name = "LaMa + SwinIR + Real-ESRGAN (API)"
 
-    # Current pinned Replicate version hashes (verified April 2026)
-    _LAMA_VERSION = (
-        "daanelson/lama:"
-        "fb8af171cfa1616ddcf1242c851ffe6ae2780e99d0a0b9b4c42597fe9f28ad17"
-    )
+    # Verified working Replicate version hashes (April 2026)
+    # daanelson/lama is deprecated/private — allenhooo/lama is the active public fork
+    _LAMA_VERSION = "allenhooo/lama"
     _REALESRGAN_VERSION = (
         "nightmareai/real-esrgan:"
-        "350d32041630ffbe63c8352783a26d94126809164e54085352f8326e53999085"
+        "f121d640bd286e1fdc67f9799164c1d5be36ff74576ee11c803ae5b665dd46aa"
     )
 
     # ------------------------------------------------------------------ #
@@ -128,10 +126,10 @@ class RealESRGANBackend:
 
     @staticmethod
     def _make_scratch_mask(img: Image.Image) -> Image.Image | None:
-        gray    = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
-        kernel  = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 25))
-        tophat  = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel)
-        _, mask = cv2.threshold(tophat, 20, 255, cv2.THRESH_BINARY)
+        gray     = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
+        kernel   = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 25))
+        tophat   = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel)
+        _, mask  = cv2.threshold(tophat, 20, 255, cv2.THRESH_BINARY)
         dilate_k = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
         mask     = cv2.dilate(mask, dilate_k, iterations=2)
         if mask.sum() < mask.size * 0.001 * 255:
@@ -147,7 +145,7 @@ class RealESRGANBackend:
 
     @staticmethod
     def _read_replicate_output(output: Any) -> Image.Image:
-        """Unified handler for replicate SDK >=1.0 FileOutput / iterator / URL string."""
+        """Handles replicate SDK >=1.0 FileOutput / iterator / legacy URL string."""
         if hasattr(output, "read"):
             return Image.open(output).convert("RGB")
         if hasattr(output, "__iter__"):
@@ -196,13 +194,12 @@ class RealESRGANBackend:
     def _run_swinir(self, img: Image.Image) -> Image.Image:
         if not settings.HF_API_TOKEN:
             raise RuntimeError("HF_API_TOKEN not set")
-        padded = self._pad_to_mult8(img)
-        buf    = io.BytesIO()
+        padded    = self._pad_to_mult8(img)
+        buf       = io.BytesIO()
         padded.save(buf, "PNG")
         raw_bytes = buf.getvalue()
 
         last_exc: Exception | None = None
-        # Retry up to 3 times — first attempt may hit a cold start 503
         for attempt in range(3):
             try:
                 resp = httpx.post(
@@ -225,7 +222,7 @@ class RealESRGANBackend:
             except (httpx.RemoteProtocolError, httpx.ReadTimeout) as exc:
                 last_exc = exc
                 wait = 20 * (attempt + 1)
-                log.info(f"[SwinIR] Connection error ({exc}), retrying in {wait}s (attempt {attempt + 1}/3)")
+                log.info(f"[SwinIR] Connection error, retrying in {wait}s (attempt {attempt + 1}/3)")
                 time.sleep(wait)
 
         raise RuntimeError(f"SwinIR failed after 3 attempts: {last_exc}")

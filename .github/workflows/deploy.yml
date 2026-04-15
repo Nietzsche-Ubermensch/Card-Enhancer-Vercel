@@ -9,6 +9,7 @@ on:
 
 env:
   PYTHON_VERSION: "3.11"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ── 1. Secrets gate ────────────────────────────────────────────────────
@@ -31,7 +32,7 @@ jobs:
           fi
           echo "✅ REPLICATE_API_TOKEN set"
 
-  # ── 2. YOLO quality gate (runs without secrets — weights optional) ─────
+  # ── 2. YOLO quality gate (no secrets needed — weights optional) ────────
   yolo-quality-gate:
     runs-on: ubuntu-latest
     steps:
@@ -45,13 +46,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Generate scene test card (card on background)
+      - name: Generate test card
         run: |
           python tests/generate_test_card.py \
             --output tests/fixtures/scene_card.png \
             --worn
 
-      - name: Run YOLO detection + assert quality gates
+      - name: YOLO detection quality gate
         run: |
           python - <<'EOF'
           import sys
@@ -62,19 +63,18 @@ jobs:
           print(f"Input size: {img.size}")
 
           if not is_available():
-              print("YOLO weights not present — skipping detection gate (OK for fresh repos)")
-              print("Place trained weights at models/card_detector_obb.pt to activate this gate.")
+              print("YOLO weights not present — gate skipped (place weights at models/card_detector_obb.pt to activate)")
               sys.exit(0)
 
           result = detect_and_crop_detailed(img)
-          print(f"Detected:    {result.detected}")
-          print(f"Confidence:  {result.confidence:.3f}")
-          print(f"Input size:  {result.original_size}")
-          print(f"Crop size:   {result.cropped_size}")
+          print(f"Detected:   {result.detected}")
+          print(f"Confidence: {result.confidence:.3f}")
+          print(f"Input size: {result.original_size}")
+          print(f"Crop size:  {result.cropped_size}")
 
           assert result.detected, "YOLO failed to detect card"
-          assert result.confidence >= 0.55, f"Confidence {result.confidence:.3f} below threshold 0.55"
-          assert result.cropped_size != result.original_size, "Crop size unchanged — no crop occurred"
+          assert result.confidence >= 0.55, f"Confidence {result.confidence:.3f} below 0.55"
+          assert result.cropped_size != result.original_size, "No crop occurred"
 
           print("✅ All YOLO quality gates passed")
           EOF

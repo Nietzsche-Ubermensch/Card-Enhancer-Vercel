@@ -1,0 +1,28 @@
+__pycache__/
+*.py[cod]
+*.so
+*.db
+*.db-journal
+
+# Runtime directories (content, not the dirs themselves)
+outputs/*
+temp/*
+uploads/*
+!outputs/.gitkeep
+!temp/.gitkeep
+!uploads/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db

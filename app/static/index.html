@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Card Enhancer AI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter','system-ui','sans-serif'] },
+          colors: {
+            surface: { 950:'#020617', 900:'#0f172a', 800:'#1e293b' },
+            accent:  { 400:'#818cf8', 500:'#6366f1', 600:'#4f46e5' },
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    [x-cloak]{display:none!important}
+    .glass{background:rgba(15,23,42,.6);backdrop-filter:blur(20px);border:1px solid rgba(99,102,241,.15)}
+    .glass-light{background:rgba(30,41,59,.5);backdrop-filter:blur(12px);border:1px solid rgba(148,163,184,.1)}
+    .progress-bar{background:linear-gradient(90deg,#6366f1,#818cf8,#a5b4fc);background-size:200% 100%;animation:shimmer 2s linear infinite}
+    .drop-active{border-color:#818cf8!important;background:rgba(99,102,241,.1)!important;box-shadow:0 0 30px rgba(99,102,241,.2)}
+    .card-hover:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(0,0,0,.3)}
+    .slider-overlay{position:absolute;top:0;left:0;bottom:0;overflow:hidden;border-right:2px solid #818cf8}
+    ::-webkit-scrollbar{width:6px}
+    ::-webkit-scrollbar-track{background:#0f172a}
+    ::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
+    @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+  </style>
+</head>
+
+<body class="bg-surface-950 text-slate-200 font-sans min-h-screen"
+      x-data="app()" x-init="init()">
+
+<!-- ── HEADER ────────────────────────────────────────────────── -->
+<header class="glass sticky top-0 z-50 px-6 py-4">
+  <div class="max-w-7xl mx-auto flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-500 to-purple-600 flex items-center justify-center text-white text-lg">&#10022;</div>
+      <div>
+        <h1 class="text-lg font-bold text-white tracking-tight">Card Enhancer AI</h1>
+        <p class="text-xs text-slate-400" x-text="system.version ? 'v'+system.version : 'Loading...'"></p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <div class="hidden sm:flex items-center gap-2 glass-light rounded-full px-3 py-1.5 text-xs">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span class="text-slate-300 font-medium" x-text="system.active_backend || 'OpenCV + Pillow (CPU)'"></span>
+      </div>
+      <button @click="activeTab='jobs'"
+              class="flex items-center gap-1.5 glass-light rounded-full px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white transition-colors">
+        &#9776; <span x-text="jobs.length+' jobs'"></span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ── MAIN ──────────────────────────────────────────────────── -->
+<main class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+
+  <!-- Tabs -->
+  <nav class="flex gap-1 mb-8 glass-light rounded-xl p-1 w-fit">
+    <template x-for="tab in ['enhance','jobs','results']" :key="tab">
+      <button class="px-5 py-2 rounded-lg text-sm font-medium transition-all"
+              :class="activeTab===tab?'bg-accent-600 text-white shadow-lg':'text-slate-400 hover:text-white'"
+              @click="activeTab=tab"
+              x-text="tab[0].toUpperCase()+tab.slice(1)"></button>
+    </template>
+  </nav>
+
+  <!-- ── ENHANCE TAB ───────────────────────────────────────── -->
+  <div x-show="activeTab==='enhance'" x-cloak>
+
+    <!-- Presets -->
+    <section class="mb-8">
+      <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">Preset</h2>
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <template x-for="p in presets" :key="p.name">
+          <button class="glass-light rounded-xl p-4 text-left transition-all hover:border-accent-500/50"
+                  :class="selectedPreset===p.name?'border-accent-500 ring-1 ring-accent-500/30 bg-accent-600/10':''"
+                  @click="selectedPreset=p.name">
+            <div class="text-sm font-semibold text-white mb-1" x-text="fmtPreset(p.name)"></div>
+            <div class="text-xs text-slate-400 line-clamp-2 mb-2" x-text="p.description"></div>
+            <div class="flex gap-1 flex-wrap">
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-300"
+                    x-text="(p.settings.upscale_factor||2)+'x'"></span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-300"
+                    x-text="(p.settings.format||'png').toUpperCase()"></span>
+            </div>
+          </button>
+        </template>
+        <!-- Custom -->
+        <button class="glass-light rounded-xl p-4 text-left transition-all hover:border-accent-500/50"
+                :class="selectedPreset==='custom'?'border-accent-500 ring-1 ring-accent-500/30 bg-accent-600/10':''"
+                @click="selectedPreset='custom'">
+          <div class="text-sm font-semibold text-white mb-1">Custom</div>
+          <div class="text-xs text-slate-400">Fine-tune every setting yourself</div>
+        </button>
+      </div>
+    </section>
+
+    <!-- Custom settings panel -->
+    <section class="mb-8" x-show="selectedPreset==='custom'" x-cloak>
+      <div class="glass-light rounded-xl p-6 space-y-5">
+        <h3 class="text-sm font-semibold text-white">Custom Settings</h3>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Upscale Factor</label>
+            <select x-model.number="custom.upscale_factor"
+                    class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+              <option value="2">2x</option>
+              <option value="4">4x</option>
+              <option value="8">8x</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Output Format</label>
+            <select x-model="custom.format"
+                    class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+              <option value="png">PNG</option>
+              <option value="jpg">JPEG</option>
+              <option value="webp">WebP</option>
+              <option value="tiff">TIFF</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">
+              Quality &mdash; <span x-text="custom.quality+'%'"></span>
+            </label>
+            <input type="range" x-model.number="custom.quality" min="1" max="100"
+                   class="w-full accent-indigo-500 mt-2" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Denoise Strength</label>
+            <select x-model="custom.denoise_strength"
+                    class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+              <option value="off">Off</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-6">
+          <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+            <input type="checkbox" x-model="custom.sharpen" class="accent-indigo-500 w-4 h-4" />
+            <span class="text-slate-300">Sharpen</span>
+          </label>
+          <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+            <input type="checkbox" x-model="custom.auto_contrast" class="accent-indigo-500 w-4 h-4" />
+            <span class="text-slate-300">Auto Contrast (CLAHE)</span>
+          </label>
+          <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+            <input type="checkbox" x-model="custom.color_correct" class="accent-indigo-500 w-4 h-4" />
+            <span class="text-slate-300">Colour Correction</span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- Drop zone -->
+    <section class="mb-8">
+      <div class="border-2 border-dashed border-slate-700 rounded-2xl p-12 text-center transition-all duration-300"
+           :class="isDragging?'drop-active':''"
+           @dragover.prevent="isDragging=true"
+           @dragleave.prevent="isDragging=false"
+           @drop.prevent="handleDrop($event)">
+
+        <!-- Empty state -->
+        <div x-show="!uploadFile" class="space-y-4">
+          <div class="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-accent-500/20 to-purple-600/20 flex items-center justify-center text-3xl">&#128230;</div>
+          <div>
+            <p class="text-lg font-semibold text-white">Drop your ZIP archive here</p>
+            <p class="text-sm text-slate-400 mt-1">Up to 2 GB &middot; up to 3,000 images per batch</p>
+          </div>
+          <label class="inline-flex items-center gap-2 px-5 py-2.5 bg-accent-600 hover:bg-accent-500 rounded-xl text-sm font-medium text-white cursor-pointer transition-colors">
+            &#128194; Browse Files
+            <input type="file" accept=".zip" class="hidden" @change="handleFileSelect($event)" />
+          </label>
+        </div>
+
+        <!-- File selected -->
+        <div x-show="uploadFile" class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-12 h-12 rounded-xl bg-accent-600/20 flex items-center justify-center text-2xl">&#128451;</div>
+            <div class="text-left">
+              <p class="font-medium text-white" x-text="uploadFile?.name"></p>
+              <p class="text-xs text-slate-400" x-text="fmtSize(uploadFile?.size||0)"></p>
+            </div>
+          </div>
+          <button @click="uploadFile=null"
+                  class="p-2 hover:bg-slate-700 rounded-lg transition-colors text-slate-400 hover:text-white">&#10005;</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Submit -->
+    <div class="flex justify-center" x-show="uploadFile">
+      <button @click="startJob()" :disabled="uploading"
+              class="px-10 py-3 bg-gradient-to-r from-accent-600 to-purple-600 hover:from-accent-500 hover:to-purple-500 rounded-xl text-white font-semibold shadow-lg transition-all disabled:opacity-50 flex items-center gap-2">
+        <span x-show="uploading" class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+        <span x-text="uploading?'Uploading...':'&#9889; Enhance Cards'"></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── JOBS TAB ──────────────────────────────────────────── -->
+  <div x-show="activeTab==='jobs'" x-cloak>
+    <div x-show="jobs.length===0" class="text-center py-24">
+      <div class="text-5xl mb-4">&#128237;</div>
+      <p class="text-slate-400">No jobs yet. Upload a ZIP to get started.</p>
+    </div>
+    <div class="space-y-4">
+      <template x-for="job in jobs" :key="job.job_id">
+        <div class="glass rounded-xl p-5 space-y-3">
+          <!-- Header row -->
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <span class="w-3 h-3 rounded-full flex-shrink-0"
+                    :class="{
+                      'bg-amber-400 animate-pulse': job.status==='processing',
+                      'bg-purple-400 animate-pulse': job.status==='analyzing',
+                      'bg-emerald-400': job.status==='completed',
+                      'bg-blue-400': job.status==='partially_completed',
+                      'bg-red-400': job.status==='failed',
+                      'bg-slate-500': ['pending','cancelled'].includes(job.status)
+                    }"></span>
+              <div>
+                <span class="font-mono text-sm text-white" x-text="job.job_id.slice(0,8)+'...'"></span>
+                <span class="text-xs text-slate-500 ml-2" x-text="job.backend_used||'OpenCV'"></span>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="text-xs text-slate-400"
+                    x-text="job.elapsed_seconds?job.elapsed_seconds.toFixed(1)+'s':''"></span>
+              <span class="text-xs px-2.5 py-1 rounded-full font-medium"
+                    :class="{
+                      'bg-amber-900/40 text-amber-300': job.status==='processing',
+                      'bg-purple-900/40 text-purple-300': job.status==='analyzing',
+                      'bg-emerald-900/40 text-emerald-300': job.status==='completed',
+                      'bg-blue-900/40 text-blue-300': job.status==='partially_completed',
+                      'bg-red-900/40 text-red-300': job.status==='failed',
+                      'bg-slate-800 text-slate-400': ['pending','cancelled'].includes(job.status)
+                    }"
+                    x-text="job.status"></span>
+              <button x-show="['processing','analyzing','pending'].includes(job.status)"
+                      @click="cancelJob(job.job_id)"
+                      class="p-1.5 hover:bg-red-900/30 rounded-lg transition-colors text-red-400 text-xs">&#10005; Cancel</button>
+            </div>
+          </div>
+
+          <!-- Progress bar -->
+          <div x-show="['processing','analyzing'].includes(job.status)">
+            <div class="flex justify-between text-xs text-slate-400 mb-1.5">
+              <span x-text="job.message||'Processing...'"></span>
+              <span x-text="(job.progress||0)+'%'"></span>
+            </div>
+            <div class="h-2 bg-slate-800 rounded-full overflow-hidden">
+              <div class="progress-bar h-full rounded-full transition-all duration-500"
+                   :style="'width:'+(job.progress||0)+'%'"></div>
+            </div>
+            <div class="flex justify-between text-xs text-slate-500 mt-1.5">
+              <span x-text="(job.completed_images||0)+' done'"></span>
+              <span x-text="(job.failed_images||0)+' failed'"></span>
+              <span x-text="(job.total_images||0)+' total'"></span>
+            </div>
+          </div>
+
+          <!-- Actions for completed -->
+          <div x-show="['completed','partially_completed'].includes(job.status)">
+            <button @click="viewResults(job.job_id)"
+                    class="text-xs px-3 py-1.5 bg-accent-600/20 hover:bg-accent-600/30 text-accent-400 rounded-lg transition-colors">
+              &#128065; View Results
+            </button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- ── RESULTS TAB ───────────────────────────────────────── -->
+  <div x-show="activeTab==='results'" x-cloak>
+
+    <!-- Toolbar -->
+    <div x-show="selectedJobId" class="flex items-center justify-between mb-6 flex-wrap gap-3">
+      <div class="flex items-center gap-3">
+        <button @click="activeTab='jobs'" class="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">&larr; Back</button>
+        <h2 class="text-lg font-semibold text-white">Results</h2>
+        <span class="text-xs text-slate-500 font-mono" x-text="selectedJobId?.slice(0,12)+'...'"></span>
+        <span class="text-xs text-slate-400" x-text="currentResults.length+' images'"></span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button @click="viewMode='grid'"
+                :class="viewMode==='grid'?'bg-accent-600 text-white':'bg-slate-800 text-slate-400'"
+                class="px-3 py-1.5 rounded-lg text-xs transition-colors">&#8862; Grid</button>
+        <button @click="viewMode='compare'"
+                :class="viewMode==='compare'?'bg-accent-600 text-white':'bg-slate-800 text-slate-400'"
+                class="px-3 py-1.5 rounded-lg text-xs transition-colors">&#10697; Compare</button>
+        <button @click="downloadAll()"
+                class="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-xs transition-colors">
+          &darr; Download All
+        </button>
+      </div>
+    </div>
+
+    <!-- Grid view -->
+    <div x-show="viewMode==='grid'"
+         class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+      <template x-for="img in currentResults" :key="img.filename">
+        <div class="glass-light rounded-xl overflow-hidden card-hover transition-all cursor-pointer group"
+             @click="openCompare(img)">
+          <div class="aspect-[3/4] bg-slate-800 relative overflow-hidden">
+            <img :src="'/v1/image/'+selectedJobId+'/'+img.filename"
+                 :alt="img.filename"
+                 class="w-full h-full object-cover"
+                 loading="lazy" />
+            <div class="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
+              <span class="text-xs text-white font-medium truncate" x-text="img.filename"></span>
+            </div>
+          </div>
+          <div class="p-3">
+            <p class="text-xs text-white font-medium truncate" x-text="img.filename"></p>
+            <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+              <span x-text="img.original_size||'—'"></span>
+              <span>&rarr;</span>
+              <span x-text="img.enhanced_size||'—'"></span>
+            </div>
+            <p class="text-[10px] text-slate-500 mt-0.5" x-text="(img.processing_time_ms||0)+'ms'"></p>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- Compare slider view -->
+    <div x-show="viewMode==='compare'&&compareImage" x-cloak>
+      <div class="glass rounded-2xl overflow-hidden">
+        <div class="relative select-none" style="max-height:72vh">
+          <!-- Enhanced (background) -->
+          <img :src="'/v1/image/'+selectedJobId+'/'+compareImage?.filename"
+               class="w-full object-contain" style="max-height:72vh" />
+          <!-- Original (clipped overlay) -->
+          <div class="slider-overlay" :style="'width:'+sliderPos+'%'">
+            <img :src="'/v1/original/'+selectedJobId+'/'+compareImage?.filename"
+                 class="object-cover h-full" style="min-width:400%" />
+          </div>
+          <!-- Slider handle -->
+          <input type="range" min="0" max="100" x-model.number="sliderPos"
+                 class="absolute bottom-5 left-1/2 -translate-x-1/2 w-1/2 accent-indigo-500 cursor-pointer" />
+          <div class="absolute top-3 left-3 text-[10px] px-2 py-1 bg-black/70 rounded text-white font-semibold">ORIGINAL</div>
+          <div class="absolute top-3 right-3 text-[10px] px-2 py-1 bg-accent-600/90 rounded text-white font-semibold">ENHANCED</div>
+        </div>
+        <div class="p-4 flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <p class="text-sm font-medium text-white" x-text="compareImage?.filename"></p>
+            <p class="text-xs text-slate-400"
+               x-text="(compareImage?.original_size||'—')+' &rarr; '+(compareImage?.enhanced_size||'—')+' &middot; '+(compareImage?.processing_time_ms||0)+'ms'"></p>
+          </div>
+          <div class="flex gap-2">
+            <button @click="sliderPos=0" class="text-xs px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors">Original</button>
+            <button @click="sliderPos=100" class="text-xs px-2.5 py-1.5 bg-accent-600/20 hover:bg-accent-600/30 rounded-lg text-accent-400 transition-colors">Enhanced</button>
+            <a :href="'/v1/image/'+selectedJobId+'/'+compareImage?.filename"
+               :download="compareImage?.filename"
+               class="text-xs px-2.5 py-1.5 bg-emerald-900/40 hover:bg-emerald-900/60 rounded-lg text-emerald-300 transition-colors">&darr; Save</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filmstrip -->
+      <div class="flex gap-2 mt-4 overflow-x-auto pb-2">
+        <template x-for="img in currentResults" :key="img.filename">
+          <button @click="compareImage=img;sliderPos=50"
+                  class="flex-shrink-0 w-16 h-20 rounded-lg overflow-hidden border-2 transition-all"
+                  :class="compareImage?.filename===img.filename?'border-accent-500':'border-transparent hover:border-slate-600'">
+            <img :src="'/v1/image/'+selectedJobId+'/'+img.filename"
+                 class="w-full h-full object-cover" loading="lazy" />
+          </button>
+        </template>
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <div x-show="!selectedJobId" class="text-center py-24">
+      <div class="text-5xl mb-4">&#128444;</div>
+      <p class="text-slate-400">Select a completed job from the Jobs tab to view results.</p>
+    </div>
+  </div>
+
+</main>
+
+<!-- ── FOOTER ─────────────────────────────────────────────── -->
+<footer class="border-t border-slate-800/50 py-5 mt-12">
+  <div class="max-w-7xl mx-auto px-6 flex items-center justify-between text-xs text-slate-500">
+    <span>100% local &middot; Zero cloud &middot; Zero telemetry</span>
+    <span x-text="system.active_backend||'OpenCV + Pillow (CPU)'"></span>
+  </div>
+</footer>
+
+<script>
+function app() {
+  return {
+    activeTab:      'enhance',
+    system:         {},
+    presets:        [],
+    jobs:           [],
+    selectedPreset: 'worn_card',
+    uploadFile:     null,
+    uploading:      false,
+    isDragging:     false,
+    selectedJobId:  null,
+    currentResults: [],
+    viewMode:       'grid',
+    compareImage:   null,
+    sliderPos:      50,
+    ws:             null,
+    custom: {
+      upscale_factor:   4,
+      format:           'png',
+      quality:          95,
+      denoise:          true,
+      denoise_strength: 'medium',
+      sharpen:          true,
+      sharpen_strength: 0.5,
+      auto_contrast:    true,
+      color_correct:    true,
+    },
+
+    async init() {
+      await Promise.all([this.loadSystem(), this.loadPresets()]);
+      setInterval(() => this.pollJobs(),   3000);
+      setInterval(() => this.loadSystem(), 30000);
+    },
+
+    async loadSystem() {
+      try { this.system = await (await fetch('/v1/system')).json(); } catch(_){}
+    },
+
+    async loadPresets() {
+      try {
+        const d = await (await fetch('/v1/presets')).json();
+        this.presets = d.presets;
+      } catch(_){}
+    },
+
+    async pollJobs() {
+      for (let i = 0; i < this.jobs.length; i++) {
+        const job = this.jobs[i];
+        if (['completed','failed','cancelled'].includes(job.status)) continue;
+        try {
+          const d = await (await fetch('/v1/batch/status/' + job.job_id)).json();
+          this.jobs[i] = { ...this.jobs[i], ...d };
+        } catch(_){}
+      }
+    },
+
+    handleDrop(e) {
+      this.isDragging = false;
+      const f = e.dataTransfer.files[0];
+      if (f && f.name.endsWith('.zip')) this.uploadFile = f;
+    },
+
+    handleFileSelect(e) {
+      if (e.target.files[0]) this.uploadFile = e.target.files[0];
+    },
+
+    async startJob() {
+      if (!this.uploadFile || this.uploading) return;
+      this.uploading = true;
+      const fd = new FormData();
+      fd.append('zip_file', this.uploadFile);
+      if (this.selectedPreset === 'custom') {
+        fd.append('settings_json', JSON.stringify(this.custom));
+      } else {
+        fd.append('preset', this.selectedPreset);
+      }
+      try {
+        const res  = await fetch('/v1/batch/upload', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Upload failed');
+        this.jobs.unshift({ ...data, progress: 0, elapsed_seconds: 0 });
+        this.activeTab  = 'jobs';
+        this.uploadFile = null;
+        this.connectWS(data.job_id);
+      } catch(err) {
+        alert('Upload failed: ' + err.message);
+      } finally {
+        this.uploading = false;
+      }
+    },
+
+    connectWS(jobId) {
+      if (this.ws) this.ws.close();
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      this.ws = new WebSocket(`${proto}://${location.host}/v1/ws/${jobId}`);
+      this.ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        const idx  = this.jobs.findIndex(j => j.job_id === jobId);
+        if (idx >= 0) this.jobs[idx] = { ...this.jobs[idx], ...data };
+      };
+      this.ws.onclose = () => {
+        setTimeout(async () => {
+          try {
+            const d   = await (await fetch('/v1/batch/status/' + jobId)).json();
+            const idx = this.jobs.findIndex(j => j.job_id === jobId);
+            if (idx >= 0) this.jobs[idx] = { ...this.jobs[idx], ...d };
+          } catch(_){}
+        }, 1000);
+      };
+    },
+
+    async cancelJob(jobId) {
+      try {
+        await fetch('/v1/batch/' + jobId, { method: 'DELETE' });
+        const idx = this.jobs.findIndex(j => j.job_id === jobId);
+        if (idx >= 0) this.jobs[idx].status = 'cancelled';
+      } catch(_){}
+    },
+
+    async viewResults(jobId) {
+      this.selectedJobId  = jobId;
+      this.activeTab      = 'results';
+      this.compareImage   = null;
+      this.viewMode       = 'grid';
+      try {
+        const d = await (await fetch('/v1/batch/results/' + jobId)).json();
+        this.currentResults = d.results || [];
+      } catch(_){}
+    },
+
+    openCompare(img) {
+      this.compareImage = img;
+      this.viewMode     = 'compare';
+      this.sliderPos    = 50;
+    },
+
+    downloadAll() {
+      if (!this.selectedJobId) return;
+      this.currentResults.forEach(img => {
+        if (img.status !== 'completed') return;
+        const a = document.createElement('a');
+        a.href     = '/v1/image/' + this.selectedJobId + '/' + img.filename;
+        a.download = img.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      });
+    },
+
+    fmtPreset(n) {
+      return n.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+    },
+
+    fmtSize(b) {
+      if (b < 1024)    return b + ' B';
+      if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+      return (b/1048576).toFixed(1) + ' MB';
+    },
+  };
+}
+</script>
+</body>
+</html>

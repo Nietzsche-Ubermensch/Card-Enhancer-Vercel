@@ -12,14 +12,14 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # ── 1. Secrets gate ────────────────────────────────────────────────────
+  # ── 1. Secrets gate ──────────────────────────────────────────────────
   validate-secrets:
     runs-on: ubuntu-latest
     steps:
       - name: Check HF_API_TOKEN
         run: |
           if [ -z "${{ secrets.HF_API_TOKEN }}" ]; then
-            echo "::error::HF_API_TOKEN not set. Add it under Settings → Secrets."
+            echo "::error::HF_API_TOKEN not set."
             exit 1
           fi
           echo "✅ HF_API_TOKEN set"
@@ -27,64 +27,49 @@ jobs:
       - name: Check REPLICATE_API_TOKEN
         run: |
           if [ -z "${{ secrets.REPLICATE_API_TOKEN }}" ]; then
-            echo "::error::REPLICATE_API_TOKEN not set. Add it under Settings → Secrets."
+            echo "::error::REPLICATE_API_TOKEN not set."
             exit 1
           fi
           echo "✅ REPLICATE_API_TOKEN set"
 
-  # ── 2. YOLO quality gate (no secrets needed — weights optional) ────────
+  # ── 2. YOLO quality gate (no secrets needed) ─────────────────────
   yolo-quality-gate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-
       - name: Install dependencies
         run: pip install -r requirements.txt
-
       - name: Generate test card
         run: |
           python tests/generate_test_card.py \
             --output tests/fixtures/scene_card.png \
             --worn
-
       - name: YOLO detection quality gate
         run: |
           python - <<'EOF'
           import sys
           from PIL import Image
           from app.services.card_detector import is_available, detect_and_crop_detailed
-
           img = Image.open("tests/fixtures/scene_card.png")
-          print(f"Input size: {img.size}")
-
           if not is_available():
-              print("YOLO weights not present — gate skipped (place weights at models/card_detector_obb.pt to activate)")
+              print("YOLO weights not present — gate skipped")
               sys.exit(0)
-
           result = detect_and_crop_detailed(img)
-          print(f"Detected:   {result.detected}")
-          print(f"Confidence: {result.confidence:.3f}")
-          print(f"Input size: {result.original_size}")
-          print(f"Crop size:  {result.cropped_size}")
-
           assert result.detected, "YOLO failed to detect card"
           assert result.confidence >= 0.55, f"Confidence {result.confidence:.3f} below 0.55"
           assert result.cropped_size != result.original_size, "No crop occurred"
-
           print("✅ All YOLO quality gates passed")
           EOF
 
-  # ── 3. Full pipeline test ──────────────────────────────────────────────
+  # ── 3. Full pipeline test ─────────────────────────────────────────────
   pipeline-test:
     needs: validate-secrets
     runs-on: ubuntu-latest
     timeout-minutes: 25
-
     env:
       HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
       REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
@@ -92,12 +77,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-
       - name: Install dependencies
         run: pip install -r requirements.txt
 
@@ -106,15 +89,15 @@ jobs:
           python tests/generate_test_card.py \
             --output tests/fixtures/test_card.png \
             --worn
-          echo "TEST_INPUT=tests/fixtures/test_card.png" >> "$GITHUB_ENV"
-          echo "TEST_OUTPUT=tests/fixtures/output_card.png" >> "$GITHUB_ENV"
 
       - name: Run enhancement pipeline
         id: pipeline
         run: |
           START=$(date +%s.%N)
-          python -c "
-import os
+
+          # Run pipeline and capture the output path it actually writes to
+          OUTPUT_PATH=$(python - <<'EOF'
+import os, sys
 os.environ['UPSCALE_BACKEND'] = 'realesrgan'
 from app.services.enhancement_service import EnhancementService
 svc = EnhancementService()
@@ -122,17 +105,23 @@ result = svc.enhance_image(
     input_path='tests/fixtures/test_card.png',
     opts={'upscale_factor': 4, 'denoise': True, 'format': 'png', 'quality': 95, 'auto_crop': True},
 )
-print(f'Output: {result}')
-"
+print(result, end='')
+EOF
+          )
+
           END=$(date +%s.%N)
           ELAPSED=$(python3 -c "print(round($END - $START, 2))")
-          echo "elapsed=$ELAPSED" >> "$GITHUB_OUTPUT"
+
+          echo "Output path: $OUTPUT_PATH"
+          echo "elapsed=$ELAPSED"     >> "$GITHUB_OUTPUT"
+          echo "output=$OUTPUT_PATH" >> "$GITHUB_OUTPUT"
+          echo "TEST_OUTPUT=$OUTPUT_PATH" >> "$GITHUB_ENV"
 
       - name: Compute quality metrics
         run: |
           python tests/quality_metrics.py \
-            --input  "${{ env.TEST_INPUT }}" \
-            --output "${{ env.TEST_OUTPUT }}" \
+            --input  tests/fixtures/test_card.png \
+            --output "${{ steps.pipeline.outputs.output }}" \
             --time   "${{ steps.pipeline.outputs.elapsed }}" \
             --summary-file /tmp/metrics_summary.md \
             --json
@@ -143,8 +132,8 @@ print(f'Output: {result}')
         with:
           name: pipeline-output
           path: |
-            ${{ env.TEST_INPUT }}
-            ${{ env.TEST_OUTPUT }}
+            tests/fixtures/test_card.png
+            ${{ steps.pipeline.outputs.output }}
           retention-days: 7
 
       - name: Post job summary

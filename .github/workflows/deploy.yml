@@ -23,7 +23,6 @@ jobs:
             exit 1
           fi
           echo "✅ HF_API_TOKEN set"
-
       - name: Check REPLICATE_API_TOKEN
         run: |
           if [ -z "${{ secrets.REPLICATE_API_TOKEN }}" ]; then
@@ -93,10 +92,9 @@ jobs:
       - name: Run enhancement pipeline
         id: pipeline
         run: |
-          START=$(date +%s.%N)
+          START=$(date +%s%3N)
 
-          # Run pipeline and capture the output path it actually writes to
-          OUTPUT_PATH=$(python - <<'EOF'
+          python - <<'EOF'
 import os, sys
 os.environ['UPSCALE_BACKEND'] = 'realesrgan'
 from app.services.enhancement_service import EnhancementService
@@ -105,23 +103,28 @@ result = svc.enhance_image(
     input_path='tests/fixtures/test_card.png',
     opts={'upscale_factor': 4, 'denoise': True, 'format': 'png', 'quality': 95, 'auto_crop': True},
 )
-print(result, end='')
+# Write the actual output path to a known file so bash can read it
+with open('/tmp/pipeline_output_path.txt', 'w') as f:
+    f.write(str(result))
+print(f'Pipeline complete. Output: {result}')
 EOF
-          )
 
-          END=$(date +%s.%N)
-          ELAPSED=$(python3 -c "print(round($END - $START, 2))")
+          END=$(date +%s%3N)
+          ELAPSED=$(python3 -c "print(round(($END - $START) / 1000, 2))")
 
+          OUTPUT_PATH=$(cat /tmp/pipeline_output_path.txt)
           echo "Output path: $OUTPUT_PATH"
-          echo "elapsed=$ELAPSED"     >> "$GITHUB_OUTPUT"
-          echo "output=$OUTPUT_PATH" >> "$GITHUB_OUTPUT"
-          echo "TEST_OUTPUT=$OUTPUT_PATH" >> "$GITHUB_ENV"
+          echo "Elapsed:     ${ELAPSED}s"
+
+          echo "elapsed=$ELAPSED"       >> "$GITHUB_OUTPUT"
+          echo "output=$OUTPUT_PATH"    >> "$GITHUB_OUTPUT"
 
       - name: Compute quality metrics
         run: |
+          OUTPUT_PATH=$(cat /tmp/pipeline_output_path.txt)
           python tests/quality_metrics.py \
             --input  tests/fixtures/test_card.png \
-            --output "${{ steps.pipeline.outputs.output }}" \
+            --output "$OUTPUT_PATH" \
             --time   "${{ steps.pipeline.outputs.elapsed }}" \
             --summary-file /tmp/metrics_summary.md \
             --json
@@ -142,8 +145,9 @@ EOF
           if [ -f /tmp/metrics_summary.md ]; then
             cat /tmp/metrics_summary.md >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "⚠️ Metrics summary not generated." >> "$GITHUB_STEP_SUMMARY"
+            echo "## Real-ESRGAN Pipeline — CI Results" >> "$GITHUB_STEP_SUMMARY"
+            echo "⚠️ Metrics summary not generated — pipeline likely failed." >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "---" >> "$GITHUB_STEP_SUMMARY"
-          echo "*Run:* \`${{ github.run_id }}\` | *Commit:* \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "*Run:* \`${{ github.run_id }}\` | *Commit:* \`${{ github.sha }}\` | *Branch:* \`${{ github.ref_name }}\`" >> "$GITHUB_STEP_SUMMARY"

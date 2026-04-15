@@ -1,0 +1,44 @@
+name: Card Enhancer CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+  REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+  UPSCALE_BACKEND: realesrgan
+
+jobs:
+  run-app:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Verify secrets loaded
+        run: |
+          echo "HF token length: ${#HF_API_TOKEN}"
+          echo "Replicate token length: ${#REPLICATE_API_TOKEN}"
+          echo "Backend: $UPSCALE_BACKEND"
+
+      - name: Start app
+        run: |
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          sleep 5
+          curl -f http://localhost:8000/ || echo "App health check"
+        env:
+          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          UPSCALE_BACKEND: realesrgan

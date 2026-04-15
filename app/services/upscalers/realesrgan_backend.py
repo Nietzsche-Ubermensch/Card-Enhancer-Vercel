@@ -10,7 +10,7 @@ import httpx
 import numpy as np
 from PIL import Image
 
-from app.core.config import settings  # single source of truth for tokens
+from app.core.config import settings
 from app.utils.logger import log
 
 
@@ -18,15 +18,24 @@ class RealESRGANBackend:
     """
     Three-stage pipeline:
       0. Card crop  (OpenCV contour / perspective warp)
-      1. LaMa       (Replicate) — scratch / defect inpainting with auto mask
-      2. SwinIR     (HF Inference API, raw bytes) — denoise + artefact removal
+      1. LaMa       (Replicate) — scratch inpainting with auto mask
+      2. SwinIR     (HF Inference API) — denoise + artefact removal
       3. Real-ESRGAN (Replicate) — 4x super-resolution
 
-    Each stage falls back gracefully: failure passes the previous
-    result unchanged to the next stage.
+    Each stage degrades gracefully on failure.
     """
 
     name = "LaMa + SwinIR + Real-ESRGAN (API)"
+
+    # Current pinned Replicate version hashes (verified April 2026)
+    _LAMA_VERSION = (
+        "daanelson/lama:"
+        "fb8af171cfa1616ddcf1242c851ffe6ae2780e99d0a0b9b4c42597fe9f28ad17"
+    )
+    _REALESRGAN_VERSION = (
+        "nightmareai/real-esrgan:"
+        "350d32041630ffbe63c8352783a26d94126809164e54085352f8326e53999085"
+    )
 
     # ------------------------------------------------------------------ #
     #  Public API                                                          #
@@ -41,7 +50,6 @@ class RealESRGANBackend:
         t0 = time.time()
 
         # Stage 0 — card crop
-        # Skipped if YOLO already cropped upstream (enhancement_service sets _skip_crop)
         if not opts.get("_skip_crop", False):
             try:
                 img = self._crop_card(img)
@@ -107,32 +115,25 @@ class RealESRGANBackend:
                 pts[np.argmax(s)],
                 pts[np.argmax(diff)],
             ], dtype="float32")
-            dst = np.array([[0, 0], [499, 0], [499, 699], [0, 699]], dtype="float32")
-            M   = cv2.getPerspectiveTransform(ordered, dst)
+            dst    = np.array([[0, 0], [499, 0], [499, 699], [0, 699]], dtype="float32")
+            M      = cv2.getPerspectiveTransform(ordered, dst)
             warped = cv2.warpPerspective(cv_img, M, (500, 700))
             return Image.fromarray(cv2.cvtColor(warped, cv2.COLOR_BGR2RGB))
         x, y, w, h = cv2.boundingRect(largest)
         return img.crop((x, y, x + w, y + h))
 
     # ------------------------------------------------------------------ #
-    #  Stage 1 — LaMa via Replicate (with auto scratch mask)              #
+    #  Stage 1 — LaMa via Replicate                                       #
     # ------------------------------------------------------------------ #
 
     @staticmethod
     def _make_scratch_mask(img: Image.Image) -> Image.Image | None:
-        """
-        Detect bright linear scratches via morphological top-hat + threshold.
-        Returns a binary PIL mask (white = damaged), or None if no scratches found.
-        """
-        gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
-        # Top-hat: isolates thin bright structures
+        gray    = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
         kernel  = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 25))
         tophat  = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel)
         _, mask = cv2.threshold(tophat, 20, 255, cv2.THRESH_BINARY)
-        # Dilate slightly so LaMa has context around each scratch
         dilate_k = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
         mask     = cv2.dilate(mask, dilate_k, iterations=2)
-        # Only proceed if scratches cover more than 0.1% of image
         if mask.sum() < mask.size * 0.001 * 255:
             return None
         return Image.fromarray(mask).convert("RGB")
@@ -144,46 +145,41 @@ class RealESRGANBackend:
         buf.seek(0)
         return buf.getvalue()
 
+    @staticmethod
+    def _read_replicate_output(output: Any) -> Image.Image:
+        """Unified handler for replicate SDK >=1.0 FileOutput / iterator / URL string."""
+        if hasattr(output, "read"):
+            return Image.open(output).convert("RGB")
+        if hasattr(output, "__iter__"):
+            first = next(iter(output))
+            if hasattr(first, "read"):
+                return Image.open(first).convert("RGB")
+            resp = httpx.get(str(first), timeout=180)
+            resp.raise_for_status()
+            return Image.open(io.BytesIO(resp.content)).convert("RGB")
+        resp = httpx.get(str(output), timeout=180)
+        resp.raise_for_status()
+        return Image.open(io.BytesIO(resp.content)).convert("RGB")
+
     def _run_lama(self, img: Image.Image) -> Image.Image:
         import replicate
         if not settings.REPLICATE_API_TOKEN:
             raise RuntimeError("REPLICATE_API_TOKEN not set")
-
         mask = self._make_scratch_mask(img)
         if mask is None:
             log.info("[LaMa] No scratches detected — skipping")
             return img
-
-        img_bytes  = self._pil_to_bytes(img)
-        mask_bytes = self._pil_to_bytes(mask)
-
         output = replicate.run(
-            "daanelson/lama:fb8af171cfa1616ddcf1242c851ffe6"
-            "ae2780e99d0a0b9b4c42597fe9f28ad17",
+            self._LAMA_VERSION,
             input={
-                "image": io.BytesIO(img_bytes),
-                "mask":  io.BytesIO(mask_bytes),
+                "image": io.BytesIO(self._pil_to_bytes(img)),
+                "mask":  io.BytesIO(self._pil_to_bytes(mask)),
             },
         )
-
-        # replicate SDK >=1.0 returns FileOutput or an iterator — handle both
-        if hasattr(output, "read"):          # FileOutput
-            return Image.open(output).convert("RGB")
-        if hasattr(output, "__iter__"):      # iterator of FileOutput / URLs
-            first = next(iter(output))
-            if hasattr(first, "read"):
-                return Image.open(first).convert("RGB")
-            # Legacy: URL string
-            resp = httpx.get(str(first), timeout=120)
-            resp.raise_for_status()
-            return Image.open(io.BytesIO(resp.content)).convert("RGB")
-        # Fallback for plain URL string (old SDK)
-        resp = httpx.get(str(output), timeout=120)
-        resp.raise_for_status()
-        return Image.open(io.BytesIO(resp.content)).convert("RGB")
+        return self._read_replicate_output(output)
 
     # ------------------------------------------------------------------ #
-    #  Stage 2 — SwinIR via HF Inference API (raw PNG bytes)             #
+    #  Stage 2 — SwinIR via HF Inference API                             #
     # ------------------------------------------------------------------ #
 
     @staticmethod
@@ -204,19 +200,35 @@ class RealESRGANBackend:
         buf    = io.BytesIO()
         padded.save(buf, "PNG")
         raw_bytes = buf.getvalue()
-        # HF Inference API for image-to-image: POST raw bytes, Content-Type: image/png
-        resp = httpx.post(
-            "https://api-inference.huggingface.co/models/caidas/swin2SR-classical-sr-x4-64",
-            headers={
-                "Authorization": f"Bearer {settings.HF_API_TOKEN}",
-                "Content-Type":  "image/png",
-            },
-            content=raw_bytes,
-            timeout=180,
-        )
-        if resp.status_code != 200:
-            raise RuntimeError(f"SwinIR HTTP {resp.status_code}: {resp.text[:200]}")
-        return Image.open(io.BytesIO(resp.content)).convert("RGB")
+
+        last_exc: Exception | None = None
+        # Retry up to 3 times — first attempt may hit a cold start 503
+        for attempt in range(3):
+            try:
+                resp = httpx.post(
+                    "https://api-inference.huggingface.co/models/caidas/swin2SR-classical-sr-x4-64",
+                    headers={
+                        "Authorization": f"Bearer {settings.HF_API_TOKEN}",
+                        "Content-Type":  "image/png",
+                    },
+                    content=raw_bytes,
+                    timeout=240,
+                )
+                if resp.status_code == 503:
+                    wait = 20 * (attempt + 1)
+                    log.info(f"[SwinIR] 503 cold start, retrying in {wait}s (attempt {attempt + 1}/3)")
+                    time.sleep(wait)
+                    continue
+                if resp.status_code != 200:
+                    raise RuntimeError(f"SwinIR HTTP {resp.status_code}: {resp.text[:200]}")
+                return Image.open(io.BytesIO(resp.content)).convert("RGB")
+            except (httpx.RemoteProtocolError, httpx.ReadTimeout) as exc:
+                last_exc = exc
+                wait = 20 * (attempt + 1)
+                log.info(f"[SwinIR] Connection error ({exc}), retrying in {wait}s (attempt {attempt + 1}/3)")
+                time.sleep(wait)
+
+        raise RuntimeError(f"SwinIR failed after 3 attempts: {last_exc}")
 
     # ------------------------------------------------------------------ #
     #  Stage 3 — Real-ESRGAN via Replicate                                #
@@ -230,23 +242,10 @@ class RealESRGANBackend:
         img.save(buf, "PNG")
         buf.seek(0)
         output = replicate.run(
-            "nightmareai/real-esrgan:42fed1c4974146d4d2414e2be2c5277c"
-            "7b8a939b4ca7e50df62e0c9c63780ad9",
+            self._REALESRGAN_VERSION,
             input={"image": buf, "scale": 4, "face_enhance": False},
         )
-        # Same output-type handling as LaMa
-        if hasattr(output, "read"):
-            return Image.open(output).convert("RGB")
-        if hasattr(output, "__iter__"):
-            first = next(iter(output))
-            if hasattr(first, "read"):
-                return Image.open(first).convert("RGB")
-            resp = httpx.get(str(first), timeout=180)
-            resp.raise_for_status()
-            return Image.open(io.BytesIO(resp.content)).convert("RGB")
-        resp = httpx.get(str(output), timeout=180)
-        resp.raise_for_status()
-        return Image.open(io.BytesIO(resp.content)).convert("RGB")
+        return self._read_replicate_output(output)
 
     # ------------------------------------------------------------------ #
     #  Output writer                                                       #

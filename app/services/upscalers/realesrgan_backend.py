@@ -10,96 +10,93 @@ import httpx
 import numpy as np
 from PIL import Image
 
-from app.core.config import settings
+from app.core.config import settings  # single source of truth for tokens
 from app.utils.logger import log
 
 
 class RealESRGANBackend:
     """
     Three-stage pipeline:
-      1. LaMa  (Replicate) — scratch / defect inpainting (auto-mask via edge detection)
-      2. SwinIR (HF Inference API) — denoising + artifact removal
+      0. Card crop  (OpenCV contour / perspective warp)
+      1. LaMa       (Replicate) — scratch / defect inpainting with auto mask
+      2. SwinIR     (HF Inference API, raw bytes) — denoise + artefact removal
       3. Real-ESRGAN (Replicate) — 4x super-resolution
 
-    Falls back gracefully: if any stage fails or is skipped,
-    the next stage receives the previous result unchanged.
+    Each stage falls back gracefully: failure passes the previous
+    result unchanged to the next stage.
     """
 
     name = "LaMa + SwinIR + Real-ESRGAN (API)"
 
     # ------------------------------------------------------------------ #
-    #  Public API  (matches OpenCVBackend.enhance signature)               #
+    #  Public API                                                          #
     # ------------------------------------------------------------------ #
 
     def enhance(self, input_path: str, output_path: str, opts: Dict[str, Any]) -> str:
-        fmt = str(opts.get("format", "png")).lower()
+        fmt     = str(opts.get("format", "png")).lower()
         quality = int(opts.get("quality", 95))
 
         img = Image.open(input_path).convert("RGB")
-        log.info(f"[Pipeline] Starting {Path(input_path).name}  {img.size}")
+        log.info(f"[Pipeline] Start {Path(input_path).name}  {img.size}")
         t0 = time.time()
 
-        # Stage 0 — card crop (contour detection)
+        # Stage 0 — card crop
         try:
             img = self._crop_card(img)
-            log.info(f"[Pipeline] Crop done -> {img.size}")
+            log.info(f"[Pipeline] Crop -> {img.size}")
         except Exception as exc:
             log.warning(f"[Pipeline] Crop skipped: {exc}")
 
-        # Stage 1 — LaMa scratch removal (only if scratches detected)
-        if opts.get("denoise", True):
-            try:
-                img = self._run_lama(img)
-                log.info("[Pipeline] LaMa done")
-            except Exception as exc:
-                log.warning(f"[Pipeline] LaMa skipped: {exc}")
+        # Stage 1 — LaMa scratch inpainting
+        try:
+            img = self._run_lama(img)
+            log.info("[Pipeline] LaMa done")
+        except Exception as exc:
+            log.warning(f"[Pipeline] LaMa skipped: {exc}")
 
-        # Stage 2 — SwinIR denoising / artifact removal
+        # Stage 2 — SwinIR denoising
         try:
             img = self._run_swinir(img)
-            log.info(f"[Pipeline] SwinIR done -> {img.size}")
+            log.info(f"[Pipeline] SwinIR -> {img.size}")
         except Exception as exc:
             log.warning(f"[Pipeline] SwinIR skipped: {exc}")
 
         # Stage 3 — Real-ESRGAN 4x upscale
         try:
-            scale = int(opts.get("upscale_factor", 4))
-            img = self._run_realesrgan(img, scale=scale)
-            log.info(f"[Pipeline] Real-ESRGAN done -> {img.size}")
+            img = self._run_realesrgan(img)
+            log.info(f"[Pipeline] Real-ESRGAN -> {img.size}")
         except Exception as exc:
             log.warning(f"[Pipeline] Real-ESRGAN skipped: {exc}")
 
-        # Write output
         self._write(img, output_path, fmt, quality)
         log.info(f"[Pipeline] Finished in {time.time() - t0:.2f}s -> {output_path}")
         return output_path
 
     # ------------------------------------------------------------------ #
-    #  Stage 0 — Card crop via OpenCV contour detection                   #
+    #  Stage 0 — Card crop                                                #
     # ------------------------------------------------------------------ #
 
     @staticmethod
     def _crop_card(img: Image.Image) -> Image.Image:
         cv_img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-        gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
-        blur = cv2.GaussianBlur(gray, (5, 5), 0)
-        edges = cv2.Canny(blur, 50, 150)
+        gray   = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
+        blur   = cv2.GaussianBlur(gray, (5, 5), 0)
+        edges  = cv2.Canny(blur, 50, 150)
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
         closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
         contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             return img
-        largest = max(contours, key=cv2.contourArea)
-        # Require contour to be at least 20% of image area
+        largest  = max(contours, key=cv2.contourArea)
         img_area = img.width * img.height
         if cv2.contourArea(largest) < img_area * 0.20:
             return img
-        peri = cv2.arcLength(largest, True)
+        peri   = cv2.arcLength(largest, True)
         approx = cv2.approxPolyDP(largest, 0.02 * peri, True)
         if len(approx) == 4:
-            pts = approx.reshape(4, 2).astype("float32")
-            s = pts.sum(axis=1)
-            diff = np.diff(pts, axis=1)
+            pts     = approx.reshape(4, 2).astype("float32")
+            s       = pts.sum(axis=1)
+            diff    = np.diff(pts, axis=1)
             ordered = np.array([
                 pts[np.argmin(s)],
                 pts[np.argmin(diff)],
@@ -107,75 +104,89 @@ class RealESRGANBackend:
                 pts[np.argmax(diff)],
             ], dtype="float32")
             dst = np.array([[0, 0], [499, 0], [499, 699], [0, 699]], dtype="float32")
-            M = cv2.getPerspectiveTransform(ordered, dst)
+            M   = cv2.getPerspectiveTransform(ordered, dst)
             warped = cv2.warpPerspective(cv_img, M, (500, 700))
             return Image.fromarray(cv2.cvtColor(warped, cv2.COLOR_BGR2RGB))
         x, y, w, h = cv2.boundingRect(largest)
         return img.crop((x, y, x + w, y + h))
 
     # ------------------------------------------------------------------ #
-    #  Stage 1 — LaMa via Replicate (with auto-generated scratch mask)    #
+    #  Stage 1 — LaMa via Replicate (with auto scratch mask)              #
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    def _generate_scratch_mask(img: Image.Image) -> Image.Image | None:
+    def _make_scratch_mask(img: Image.Image) -> Image.Image | None:
         """
-        Detect thin linear scratches using morphological filtering.
-        Returns a white-on-black mask, or None if no scratches found.
+        Detect bright linear scratches via morphological top-hat + threshold.
+        Returns a binary PIL mask (white = damaged), or None if no scratches found.
         """
-        cv_img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
-        # Detect edges
-        edges = cv2.Canny(cv_img, 30, 100)
-        # Use a long thin kernel to isolate linear features (scratches)
-        h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 1))
-        v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 15))
-        h_lines = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, h_kernel)
-        v_lines = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, v_kernel)
-        combined = cv2.bitwise_or(h_lines, v_lines)
-        # Dilate to give the inpainter room to work
-        dilated = cv2.dilate(combined, np.ones((3, 3), np.uint8), iterations=2)
-        # If less than 0.5% of pixels are marked, probably no real scratches
-        if np.sum(dilated > 0) < (dilated.size * 0.005):
+        gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
+        # Top-hat: isolates thin bright structures
+        kernel  = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 25))
+        tophat  = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel)
+        _, mask = cv2.threshold(tophat, 20, 255, cv2.THRESH_BINARY)
+        # Dilate slightly so LaMa has context around each scratch
+        dilate_k = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        mask     = cv2.dilate(mask, dilate_k, iterations=2)
+        # Only proceed if scratches cover more than 0.1% of image
+        if mask.sum() < mask.size * 0.001 * 255:
             return None
-        return Image.fromarray(dilated)
+        return Image.fromarray(mask).convert("RGB")
 
     @staticmethod
-    def _run_lama(img: Image.Image) -> Image.Image:
-        import replicate
+    def _pil_to_bytes(img: Image.Image, fmt: str = "PNG") -> bytes:
+        buf = io.BytesIO()
+        img.save(buf, fmt)
+        buf.seek(0)
+        return buf.getvalue()
 
-        mask = RealESRGANBackend._generate_scratch_mask(img)
+    def _run_lama(self, img: Image.Image) -> Image.Image:
+        import replicate
+        if not settings.REPLICATE_API_TOKEN:
+            raise RuntimeError("REPLICATE_API_TOKEN not set")
+
+        mask = self._make_scratch_mask(img)
         if mask is None:
-            log.info("[Pipeline] LaMa: no scratches detected, skipping")
+            log.info("[LaMa] No scratches detected — skipping")
             return img
 
-        img_buf = io.BytesIO()
-        img.save(img_buf, "PNG")
-        img_buf.seek(0)
-
-        mask_buf = io.BytesIO()
-        mask.save(mask_buf, "PNG")
-        mask_buf.seek(0)
+        img_bytes  = self._pil_to_bytes(img)
+        mask_bytes = self._pil_to_bytes(mask)
 
         output = replicate.run(
             "daanelson/lama:fb8af171cfa1616ddcf1242c851ffe6"
             "ae2780e99d0a0b9b4c42597fe9f28ad17",
-            input={"image": img_buf, "mask": mask_buf},
+            input={
+                "image": io.BytesIO(img_bytes),
+                "mask":  io.BytesIO(mask_bytes),
+            },
         )
-        # replicate 1.x returns FileOutput or iterator — get the URL
-        url = _extract_replicate_url(output)
-        resp = httpx.get(url, timeout=120, follow_redirects=True)
+
+        # replicate SDK >=1.0 returns FileOutput or an iterator — handle both
+        if hasattr(output, "read"):          # FileOutput
+            return Image.open(output).convert("RGB")
+        if hasattr(output, "__iter__"):      # iterator of FileOutput / URLs
+            first = next(iter(output))
+            if hasattr(first, "read"):
+                return Image.open(first).convert("RGB")
+            # Legacy: URL string
+            resp = httpx.get(str(first), timeout=120)
+            resp.raise_for_status()
+            return Image.open(io.BytesIO(resp.content)).convert("RGB")
+        # Fallback for plain URL string (old SDK)
+        resp = httpx.get(str(output), timeout=120)
         resp.raise_for_status()
         return Image.open(io.BytesIO(resp.content)).convert("RGB")
 
     # ------------------------------------------------------------------ #
-    #  Stage 2 — SwinIR via Hugging Face Inference API                    #
+    #  Stage 2 — SwinIR via HF Inference API (raw PNG bytes)             #
     # ------------------------------------------------------------------ #
 
     @staticmethod
     def _pad_to_mult8(img: Image.Image) -> Image.Image:
         w, h = img.size
-        nw = (w + 7) // 8 * 8
-        nh = (h + 7) // 8 * 8
+        nw   = (w + 7) // 8 * 8
+        nh   = (h + 7) // 8 * 8
         if nw == w and nh == h:
             return img
         padded = Image.new("RGB", (nw, nh), (0, 0, 0))
@@ -183,61 +194,53 @@ class RealESRGANBackend:
         return padded
 
     def _run_swinir(self, img: Image.Image) -> Image.Image:
-        token = settings.HF_API_TOKEN
-        if not token:
+        if not settings.HF_API_TOKEN:
             raise RuntimeError("HF_API_TOKEN not set")
         padded = self._pad_to_mult8(img)
-        buf = io.BytesIO()
+        buf    = io.BytesIO()
         padded.save(buf, "PNG")
-        img_bytes = buf.getvalue()
-
-        # HF Inference API for image models expects raw image bytes
+        raw_bytes = buf.getvalue()
+        # HF Inference API for image-to-image: POST raw bytes, Content-Type: image/png
         resp = httpx.post(
             "https://api-inference.huggingface.co/models/caidas/swin2SR-classical-sr-x4-64",
             headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "image/png",
+                "Authorization": f"Bearer {settings.HF_API_TOKEN}",
+                "Content-Type":  "image/png",
             },
-            content=img_bytes,
+            content=raw_bytes,
             timeout=180,
         )
-        if resp.status_code == 503:
-            # Model is loading — wait and retry once
-            wait = resp.json().get("estimated_time", 30)
-            log.info(f"[Pipeline] SwinIR model loading, waiting {wait:.0f}s...")
-            import time as _time
-            _time.sleep(min(wait, 60))
-            resp = httpx.post(
-                "https://api-inference.huggingface.co/models/caidas/swin2SR-classical-sr-x4-64",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "image/png",
-                },
-                content=img_bytes,
-                timeout=180,
-            )
         if resp.status_code != 200:
-            raise RuntimeError(f"SwinIR HTTP {resp.status_code}: {resp.text[:300]}")
+            raise RuntimeError(f"SwinIR HTTP {resp.status_code}: {resp.text[:200]}")
         return Image.open(io.BytesIO(resp.content)).convert("RGB")
 
     # ------------------------------------------------------------------ #
     #  Stage 3 — Real-ESRGAN via Replicate                                #
     # ------------------------------------------------------------------ #
 
-    @staticmethod
-    def _run_realesrgan(img: Image.Image, scale: int = 4) -> Image.Image:
+    def _run_realesrgan(self, img: Image.Image) -> Image.Image:
         import replicate
-
+        if not settings.REPLICATE_API_TOKEN:
+            raise RuntimeError("REPLICATE_API_TOKEN not set")
         buf = io.BytesIO()
         img.save(buf, "PNG")
         buf.seek(0)
         output = replicate.run(
             "nightmareai/real-esrgan:42fed1c4974146d4d2414e2be2c5277c"
             "7b8a939b4ca7e50df62e0c9c63780ad9",
-            input={"image": buf, "scale": min(scale, 4), "face_enhance": False},
+            input={"image": buf, "scale": 4, "face_enhance": False},
         )
-        url = _extract_replicate_url(output)
-        resp = httpx.get(url, timeout=180, follow_redirects=True)
+        # Same output-type handling as LaMa
+        if hasattr(output, "read"):
+            return Image.open(output).convert("RGB")
+        if hasattr(output, "__iter__"):
+            first = next(iter(output))
+            if hasattr(first, "read"):
+                return Image.open(first).convert("RGB")
+            resp = httpx.get(str(first), timeout=180)
+            resp.raise_for_status()
+            return Image.open(io.BytesIO(resp.content)).convert("RGB")
+        resp = httpx.get(str(output), timeout=180)
         resp.raise_for_status()
         return Image.open(io.BytesIO(resp.content)).convert("RGB")
 
@@ -255,28 +258,3 @@ class RealESRGANBackend:
             img.save(path, "TIFF")
         else:
             img.save(path, "PNG", optimize=True)
-
-
-# ------------------------------------------------------------------ #
-#  Helpers                                                              #
-# ------------------------------------------------------------------ #
-
-def _extract_replicate_url(output) -> str:
-    """
-    replicate 1.x can return:
-      - a FileOutput (has .url attribute, or str() gives the URL)
-      - an iterator yielding FileOutput items
-      - a raw URL string (older SDK / some models)
-    Normalize to a plain URL string.
-    """
-    if isinstance(output, str):
-        return output
-    # Iterator (e.g. models that yield multiple outputs)
-    if hasattr(output, "__iter__") and not hasattr(output, "url"):
-        for item in output:
-            return _extract_replicate_url(item)
-    # FileOutput or similar object
-    if hasattr(output, "url"):
-        return str(output.url)
-    # Last resort
-    return str(output)

@@ -10,311 +10,143 @@
   <script>
     tailwind.config = {
       darkMode:'class',
-      theme:{
-        extend:{
-          fontFamily:{ sans:['Inter','system-ui','sans-serif'], display:['Space Grotesk','sans-serif'] },
-          colors:{
-            gold:{ 300:'#fcd34d', 400:'#fbbf24', 500:'#f59e0b', 600:'#d97706', 700:'#b45309' },
-            obsidian:{ 950:'#080808', 900:'#0e0e0e', 800:'#161616', 700:'#1e1e1e', 600:'#252525' },
-          },
-        },
-      },
+      theme:{ extend:{ fontFamily:{ sans:['Inter','system-ui','sans-serif'] } } },
     }
   </script>
   <style>
     *{box-sizing:border-box}
     [x-cloak]{display:none!important}
-
     body{ background:#080808; color:#e2e8f0; font-family:'Inter',sans-serif; }
-
-    /* Holographic shimmer */
-    @keyframes holo {
-      0%   { background-position: 0% 50%; }
-      50%  { background-position: 100% 50%; }
-      100% { background-position: 0% 50%; }
-    }
-    .holo-text {
-      background: linear-gradient(90deg, #fbbf24, #f87171, #a78bfa, #34d399, #fbbf24);
-      background-size: 300% 300%;
-      animation: holo 4s ease infinite;
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .holo-border {
-      background: linear-gradient(135deg, #fbbf24 0%, #a78bfa 40%, #34d399 70%, #fbbf24 100%);
-      background-size: 300% 300%;
-      animation: holo 4s ease infinite;
-    }
-
-    /* Glassmorphism panels */
-    .panel {
-      background: rgba(22,22,22,0.85);
-      backdrop-filter: blur(20px);
-      border: 1px solid rgba(251,191,36,0.12);
-      border-radius: 16px;
-    }
-    .panel-sm {
-      background: rgba(30,30,30,0.7);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: 12px;
-    }
-
-    /* Preset card */
-    .preset-card {
-      background: rgba(22,22,22,0.9);
-      border: 1px solid rgba(255,255,255,0.07);
-      border-radius: 14px;
-      padding: 18px 16px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      position: relative;
-      overflow: hidden;
-    }
-    .preset-card::before {
-      content:'';
-      position:absolute;
-      inset:0;
-      background: linear-gradient(135deg, rgba(251,191,36,0.06) 0%, transparent 60%);
-      opacity:0;
-      transition: opacity 0.2s;
-    }
-    .preset-card:hover { border-color: rgba(251,191,36,0.35); transform: translateY(-2px); }
-    .preset-card:hover::before { opacity:1; }
-    .preset-card.active {
-      border-color: #fbbf24;
-      background: rgba(251,191,36,0.08);
-      box-shadow: 0 0 24px rgba(251,191,36,0.15), inset 0 0 24px rgba(251,191,36,0.04);
-    }
-    .preset-card.active::before { opacity:1; }
-
-    /* Drop zone */
-    .dropzone {
-      border: 2px dashed rgba(251,191,36,0.2);
-      border-radius: 20px;
-      transition: all 0.25s ease;
-      background: rgba(14,14,14,0.6);
-    }
-    .dropzone.active {
-      border-color: #fbbf24;
-      background: rgba(251,191,36,0.05);
-      box-shadow: 0 0 40px rgba(251,191,36,0.12);
-    }
-
-    /* Progress shimmer */
-    @keyframes shimmer {
-      0%   { background-position: -200% 0; }
-      100% { background-position:  200% 0; }
-    }
-    .progress-glow {
-      background: linear-gradient(90deg, #d97706, #fbbf24, #fcd34d, #fbbf24, #d97706);
-      background-size: 200% 100%;
-      animation: shimmer 1.8s linear infinite;
-    }
-
-    /* Pipeline stage dots */
-    .stage-dot { width:10px; height:10px; border-radius:50%; background:#2a2a2a; border:2px solid #333; transition: all 0.3s; }
-    .stage-dot.done  { background:#34d399; border-color:#34d399; box-shadow:0 0 8px #34d399; }
-    .stage-dot.active{ background:#fbbf24; border-color:#fbbf24; box-shadow:0 0 10px #fbbf24; animation: pulse 1s ease infinite; }
-    @keyframes pulse { 0%,100%{transform:scale(1)}50%{transform:scale(1.3)} }
-
-    /* Job status badge */
-    .badge { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:99px; font-size:11px; font-weight:600; letter-spacing:.03em; }
-    .badge-processing { background:rgba(251,191,36,.15); color:#fbbf24; border:1px solid rgba(251,191,36,.3); }
-    .badge-completed  { background:rgba(52,211,153,.12); color:#34d399; border:1px solid rgba(52,211,153,.3); }
-    .badge-failed     { background:rgba(248,113,113,.12); color:#f87171; border:1px solid rgba(248,113,113,.3); }
-    .badge-pending    { background:rgba(148,163,184,.1);  color:#94a3b8; border:1px solid rgba(148,163,184,.2); }
-    .badge-analyzing  { background:rgba(167,139,250,.12); color:#a78bfa; border:1px solid rgba(167,139,250,.3); }
-
-    /* Btn primary */
-    .btn-primary {
-      background: linear-gradient(135deg, #d97706, #fbbf24);
-      color: #080808;
-      font-weight: 700;
-      padding: 12px 32px;
-      border-radius: 12px;
-      transition: all 0.2s;
-      font-size: 15px;
-      letter-spacing: .02em;
-      border: none;
-      cursor: pointer;
-    }
-    .btn-primary:hover { filter: brightness(1.12); transform: translateY(-1px); box-shadow: 0 8px 24px rgba(251,191,36,0.35); }
+    @keyframes holo { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+    .holo-text { background:linear-gradient(90deg,#fbbf24,#f87171,#a78bfa,#34d399,#fbbf24); background-size:300% 300%; animation:holo 4s ease infinite; -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+    .panel { background:rgba(22,22,22,.85); backdrop-filter:blur(20px); border:1px solid rgba(251,191,36,.12); border-radius:16px; }
+    .panel-sm { background:rgba(30,30,30,.7); backdrop-filter:blur(12px); border:1px solid rgba(255,255,255,.06); border-radius:12px; }
+    .preset-card { background:rgba(22,22,22,.9); border:1px solid rgba(255,255,255,.07); border-radius:14px; padding:18px 16px; cursor:pointer; transition:all .2s; }
+    .preset-card:hover { border-color:rgba(251,191,36,.35); transform:translateY(-2px); }
+    .preset-card.active { border-color:#fbbf24; background:rgba(251,191,36,.08); box-shadow:0 0 24px rgba(251,191,36,.15); }
+    .dropzone { border:2px dashed rgba(251,191,36,.2); border-radius:20px; transition:all .25s; background:rgba(14,14,14,.6); }
+    .dropzone.drag-active { border-color:#fbbf24; background:rgba(251,191,36,.05); box-shadow:0 0 40px rgba(251,191,36,.12); }
+    @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+    .progress-glow { background:linear-gradient(90deg,#d97706,#fbbf24,#fcd34d,#fbbf24,#d97706); background-size:200% 100%; animation:shimmer 1.8s linear infinite; }
+    .btn-primary { background:linear-gradient(135deg,#d97706,#fbbf24); color:#080808; font-weight:700; padding:12px 32px; border-radius:12px; transition:all .2s; font-size:15px; border:none; cursor:pointer; display:inline-flex; align-items:center; gap:8px; }
+    .btn-primary:hover { filter:brightness(1.1); transform:translateY(-1px); box-shadow:0 8px 24px rgba(251,191,36,.35); }
     .btn-primary:disabled { opacity:.45; cursor:not-allowed; transform:none; box-shadow:none; }
-
-    /* Scrollbar */
+    .badge { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:99px; font-size:11px; font-weight:600; }
+    .badge-processing { background:rgba(251,191,36,.15); color:#fbbf24; border:1px solid rgba(251,191,36,.3); }
+    .badge-analyzing  { background:rgba(167,139,250,.12); color:#a78bfa; border:1px solid rgba(167,139,250,.3); }
+    .badge-completed  { background:rgba(52,211,153,.12);  color:#34d399; border:1px solid rgba(52,211,153,.3); }
+    .badge-partially_completed { background:rgba(96,165,250,.12); color:#60a5fa; border:1px solid rgba(96,165,250,.3); }
+    .badge-failed     { background:rgba(248,113,113,.12); color:#f87171; border:1px solid rgba(248,113,113,.3); }
+    .badge-pending,.badge-cancelled { background:rgba(148,163,184,.1); color:#94a3b8; border:1px solid rgba(148,163,184,.2); }
+    .result-card { transition:all .2s; cursor:pointer; }
+    .result-card:hover { transform:translateY(-3px); box-shadow:0 12px 40px rgba(0,0,0,.5); }
+    .slider-handle { position:absolute; top:0; left:0; bottom:0; overflow:hidden; border-right:2px solid #fbbf24; }
     ::-webkit-scrollbar { width:5px; height:5px; }
     ::-webkit-scrollbar-track { background:#0e0e0e; }
     ::-webkit-scrollbar-thumb { background:#2a2a2a; border-radius:4px; }
-
-    /* Card hover */
-    .result-card { transition: all 0.2s; cursor: pointer; }
-    .result-card:hover { transform: translateY(-3px); box-shadow: 0 12px 40px rgba(0,0,0,.5); }
-
-    /* Slider */
-    .slider-overlay { position:absolute; top:0; left:0; bottom:0; overflow:hidden; border-right:2px solid #fbbf24; }
   </style>
 </head>
 
 <body x-data="app()" x-init="init()">
 
-<!-- ══ HEADER ════════════════════════════════════════════════════ -->
+<!-- HEADER -->
 <header style="background:rgba(8,8,8,.92);backdrop-filter:blur(24px);border-bottom:1px solid rgba(251,191,36,.1)" class="sticky top-0 z-50 px-6 py-4">
   <div class="max-w-7xl mx-auto flex items-center justify-between">
-
-    <div class="flex items-center gap-4">
-      <!-- Logo mark -->
-      <div class="relative w-11 h-11 flex-shrink-0">
-        <div class="holo-border absolute inset-0 rounded-xl opacity-80"></div>
-        <div class="absolute inset-[2px] rounded-[10px] bg-obsidian-900 flex items-center justify-center">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-            <path d="M12 2L14.5 9H22L16 13.5L18.5 20.5L12 16L5.5 20.5L8 13.5L2 9H9.5L12 2Z" fill="url(#star)" stroke="none"/>
-            <defs><linearGradient id="star" x1="0" y1="0" x2="24" y2="24"><stop stop-color="#fbbf24"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs>
-          </svg>
-        </div>
-      </div>
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#d97706,#fbbf24)">&#9733;</div>
       <div>
-        <h1 class="font-display text-white font-bold text-lg leading-none tracking-tight">Card Enhancer <span class="holo-text">AI</span></h1>
-        <p class="text-[11px] text-zinc-500 mt-0.5" x-text="system.version ? 'v'+system.version : 'v5.0.0'"></p>
+        <h1 class="text-white font-bold text-lg leading-none">Card Enhancer <span class="holo-text">AI</span></h1>
+        <p class="text-[11px] text-zinc-500 mt-0.5" x-text="system.version ? 'v'+system.version : ''"></p>
       </div>
     </div>
-
     <div class="flex items-center gap-3">
-      <!-- Backend badge -->
       <div class="panel-sm flex items-center gap-2 px-3 py-2 text-xs hidden sm:flex">
-        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0"></span>
-        <span class="text-zinc-300 font-medium" x-text="system.active_backend || 'LaMa + SwinIR + Real-ESRGAN'"></span>
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span class="text-zinc-300 font-medium" x-text="system.active_backend || 'Loading...'"></span>
       </div>
-      <!-- Jobs pill -->
-      <button @click="activeTab='jobs'"
-              class="panel-sm flex items-center gap-2 px-3 py-2 text-xs text-zinc-400 hover:text-white transition-colors">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        <span x-text="jobs.length + ' jobs'"></span>
+      <button @click="activeTab='jobs'" class="panel-sm flex items-center gap-2 px-3 py-2 text-xs text-zinc-400 hover:text-white transition-colors">
+        &#9776; <span x-text="jobs.length + ' jobs'"></span>
       </button>
     </div>
   </div>
 </header>
 
-<!-- ══ MAIN ══════════════════════════════════════════════════════ -->
+<!-- MAIN -->
 <main class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
 
-  <!-- Tab nav -->
+  <!-- Tabs -->
   <div class="flex gap-1 mb-8 p-1 rounded-xl w-fit" style="background:rgba(22,22,22,.8);border:1px solid rgba(255,255,255,.06)">
     <template x-for="tab in ['enhance','jobs','results']" :key="tab">
       <button class="px-6 py-2 rounded-lg text-sm font-semibold transition-all"
-              :class="activeTab===tab
-                ? 'text-obsidian-950 shadow-lg'
-                : 'text-zinc-500 hover:text-zinc-200'"
+              :class="activeTab===tab ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-200'"
               :style="activeTab===tab ? 'background:linear-gradient(135deg,#d97706,#fbbf24)' : ''"
               @click="activeTab=tab"
               x-text="tab[0].toUpperCase()+tab.slice(1)"></button>
     </template>
   </div>
 
-  <!-- ══ ENHANCE TAB ══════════════════════════════════════════════ -->
+  <!-- ENHANCE TAB -->
   <div x-show="activeTab==='enhance'" x-cloak>
 
-    <!-- Hero line -->
     <div class="mb-8">
-      <h2 class="font-display text-3xl font-bold text-white mb-1">Restore. <span class="holo-text">Enhance.</span> Grade.</h2>
-      <p class="text-zinc-500 text-sm">AI-powered sports card restoration — LaMa scratch removal → SwinIR denoising → Real-ESRGAN 4x upscale</p>
-    </div>
-
-    <!-- Pipeline stages -->
-    <div class="panel px-6 py-4 mb-8 flex items-center gap-4 flex-wrap">
-      <span class="text-xs text-zinc-500 font-semibold uppercase tracking-widest">Pipeline</span>
-      <div class="flex items-center gap-2">
-        <div class="stage-dot done"></div>
-        <span class="text-xs text-zinc-300 font-medium">Crop</span>
-      </div>
-      <div class="h-px w-6 bg-zinc-700"></div>
-      <div class="flex items-center gap-2">
-        <div class="stage-dot done"></div>
-        <span class="text-xs text-zinc-300 font-medium">LaMa</span>
-      </div>
-      <div class="h-px w-6 bg-zinc-700"></div>
-      <div class="flex items-center gap-2">
-        <div class="stage-dot done"></div>
-        <span class="text-xs text-zinc-300 font-medium">SwinIR</span>
-      </div>
-      <div class="h-px w-6 bg-zinc-700"></div>
-      <div class="flex items-center gap-2">
-        <div class="stage-dot done"></div>
-        <span class="text-xs text-zinc-300 font-medium">Real-ESRGAN 4x</span>
-      </div>
-      <div class="ml-auto text-xs text-gold-400 font-semibold">Ready</div>
+      <h2 class="text-2xl font-bold text-white mb-1">Enhance Cards</h2>
+      <p class="text-zinc-500 text-sm" x-text="system.active_backend ? 'Backend: ' + system.active_backend : 'Loading backend info...'"></p>
     </div>
 
     <!-- Presets -->
     <div class="mb-8">
-      <p class="text-xs text-zinc-500 uppercase tracking-widest font-semibold mb-4">Select Preset</p>
+      <p class="text-xs text-zinc-500 uppercase tracking-widest font-semibold mb-4">Preset</p>
       <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-
-        <!-- Preset icons -->
         <template x-for="p in presets" :key="p.name">
           <div class="preset-card" :class="selectedPreset===p.name?'active':''" @click="selectedPreset=p.name">
             <div class="text-2xl mb-3" x-text="presetIcon(p.name)"></div>
-            <div class="text-sm font-bold text-white mb-1 leading-tight" x-text="fmtPreset(p.name)"></div>
-            <div class="text-[11px] text-zinc-500 mb-3 leading-snug line-clamp-2" x-text="p.description"></div>
+            <div class="text-sm font-bold text-white mb-1" x-text="fmtPreset(p.name)"></div>
+            <div class="text-[11px] text-zinc-500 mb-3 leading-snug" x-text="p.description"></div>
             <div class="flex gap-1.5 flex-wrap">
-              <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold"
-                    style="background:rgba(251,191,36,.12);color:#fbbf24;border:1px solid rgba(251,191,36,.25)"
-                    x-text="(p.settings.upscale_factor||2)+'x'"></span>
-              <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold"
-                    style="background:rgba(255,255,255,.06);color:#a1a1aa;border:1px solid rgba(255,255,255,.08)"
-                    x-text="(p.settings.format||'png').toUpperCase()"></span>
+              <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold" style="background:rgba(251,191,36,.12);color:#fbbf24;border:1px solid rgba(251,191,36,.25)" x-text="(p.settings.upscale_factor||2)+'x'"></span>
+              <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold" style="background:rgba(255,255,255,.06);color:#a1a1aa;border:1px solid rgba(255,255,255,.08)" x-text="(p.settings.format||'png').toUpperCase()"></span>
             </div>
           </div>
         </template>
-
         <!-- Custom -->
         <div class="preset-card" :class="selectedPreset==='custom'?'active':''" @click="selectedPreset='custom'">
-          <div class="text-2xl mb-3">⚙️</div>
+          <div class="text-2xl mb-3">&#9881;&#65039;</div>
           <div class="text-sm font-bold text-white mb-1">Custom</div>
           <div class="text-[11px] text-zinc-500 mb-3">Fine-tune every parameter</div>
-          <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold"
-                style="background:rgba(167,139,250,.12);color:#a78bfa;border:1px solid rgba(167,139,250,.25)">Manual</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold" style="background:rgba(167,139,250,.12);color:#a78bfa;border:1px solid rgba(167,139,250,.25)">Manual</span>
         </div>
       </div>
     </div>
 
-    <!-- Custom settings -->
+    <!-- Custom settings — only real opts the backend reads -->
     <div class="panel p-6 mb-8" x-show="selectedPreset==='custom'" x-cloak>
-      <h3 class="text-sm font-bold text-white mb-5">Custom Parameters</h3>
+      <h3 class="text-sm font-bold text-white mb-5">Custom Settings</h3>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-5 mb-5">
         <div>
           <label class="text-xs text-zinc-500 block mb-2 font-medium">Upscale Factor</label>
-          <select x-model.number="custom.upscale_factor"
-                  class="w-full rounded-lg px-3 py-2.5 text-sm text-white font-medium focus:outline-none focus:ring-1 focus:ring-gold-500"
-                  style="background:#1e1e1e;border:1px solid rgba(255,255,255,.1)">
-            <option value="2">2× — Fast</option>
-            <option value="4">4× — Standard</option>
-            <option value="8">8× — Maximum</option>
+          <select x-model.number="custom.upscale_factor" class="w-full rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none" style="background:#1e1e1e;border:1px solid rgba(255,255,255,.1)">
+            <option value="2">2x</option>
+            <option value="4">4x</option>
+            <option value="8">8x</option>
           </select>
         </div>
         <div>
           <label class="text-xs text-zinc-500 block mb-2 font-medium">Output Format</label>
-          <select x-model="custom.format"
-                  class="w-full rounded-lg px-3 py-2.5 text-sm text-white font-medium focus:outline-none focus:ring-1 focus:ring-gold-500"
-                  style="background:#1e1e1e;border:1px solid rgba(255,255,255,.1)">
-            <option value="png">PNG — Lossless</option>
-            <option value="jpg">JPEG — Small</option>
-            <option value="webp">WebP — Web</option>
-            <option value="tiff">TIFF — Archive</option>
+          <select x-model="custom.format" class="w-full rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none" style="background:#1e1e1e;border:1px solid rgba(255,255,255,.1)">
+            <option value="png">PNG</option>
+            <option value="jpg">JPEG</option>
+            <option value="webp">WebP</option>
+            <option value="tiff">TIFF</option>
           </select>
         </div>
         <div>
-          <label class="text-xs text-zinc-500 block mb-2 font-medium">Quality — <span class="text-gold-400" x-text="custom.quality+'%'"></span></label>
-          <input type="range" x-model.number="custom.quality" min="1" max="100"
-                 class="w-full mt-1.5" style="accent-color:#fbbf24"/>
+          <label class="text-xs text-zinc-500 block mb-2 font-medium">Quality &mdash; <span class="text-yellow-400" x-text="custom.quality+'%'"></span></label>
+          <input type="range" x-model.number="custom.quality" min="1" max="100" class="w-full mt-1.5" style="accent-color:#fbbf24"/>
         </div>
         <div>
-          <label class="text-xs text-zinc-500 block mb-2 font-medium">Denoise Strength</label>
-          <select x-model="custom.denoise_strength"
-                  class="w-full rounded-lg px-3 py-2.5 text-sm text-white font-medium focus:outline-none focus:ring-1 focus:ring-gold-500"
-                  style="background:#1e1e1e;border:1px solid rgba(255,255,255,.1)">
-            <option value="off">Off</option>
+          <label class="text-xs text-zinc-500 block mb-2 font-medium">Denoise</label>
+          <select x-model="custom.denoise_strength" class="w-full rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none" style="background:#1e1e1e;border:1px solid rgba(255,255,255,.1)">
+            <option value="">Off</option>
             <option value="low">Low</option>
             <option value="medium">Medium</option>
             <option value="high">High</option>
@@ -322,266 +154,186 @@
         </div>
       </div>
       <div class="flex flex-wrap gap-6">
-        <template x-for="[key,label] in [['sharpen','Sharpen'],['auto_contrast','CLAHE Auto-Contrast'],['color_correct','Colour Correction']]" :key="key">
-          <label class="flex items-center gap-2.5 cursor-pointer select-none group">
-            <div class="relative w-5 h-5 flex-shrink-0">
-              <input type="checkbox" :x-model="'custom.'+key" @change="custom[key]=!custom[key]" :checked="custom[key]"
-                     class="peer sr-only"/>
-              <div class="w-5 h-5 rounded-md border transition-all"
-                   :style="custom[key]
-                     ? 'background:linear-gradient(135deg,#d97706,#fbbf24);border-color:#fbbf24'
-                     : 'background:#1e1e1e;border-color:rgba(255,255,255,.15)'"
-                   @click="custom[key]=!custom[key]">
-                <svg x-show="custom[key]" class="w-full h-full p-0.5" viewBox="0 0 20 20" fill="#080808"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>
-              </div>
+        <template x-for="[key,label] in [['sharpen','Sharpen'],['auto_contrast','Auto Contrast (CLAHE)'],['color_correct','Colour Correction']]" :key="key">
+          <label class="flex items-center gap-2.5 cursor-pointer select-none">
+            <div class="w-5 h-5 rounded-md border flex items-center justify-center transition-all"
+                 :style="custom[key] ? 'background:linear-gradient(135deg,#d97706,#fbbf24);border-color:#fbbf24' : 'background:#1e1e1e;border-color:rgba(255,255,255,.15)'"
+                 @click="custom[key]=!custom[key]">
+              <svg x-show="custom[key]" width="12" height="12" viewBox="0 0 12 12" fill="#080808"><path d="M2 6l3 3 5-5" stroke="#080808" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
             </div>
-            <span class="text-sm text-zinc-300 group-hover:text-white transition-colors" x-text="label"></span>
+            <span class="text-sm text-zinc-300" x-text="label"></span>
           </label>
         </template>
       </div>
     </div>
 
     <!-- Drop zone -->
-    <div class="dropzone p-16 text-center mb-8 relative"
-         :class="isDragging?'active':''"
+    <div class="dropzone p-16 text-center mb-8"
+         :class="isDragging?'drag-active':''"
          @dragover.prevent="isDragging=true"
          @dragleave.prevent="isDragging=false"
          @drop.prevent="handleDrop($event)">
-
-      <!-- Empty state -->
       <div x-show="!uploadFile">
-        <div class="flex justify-center mb-6">
-          <div class="relative">
-            <!-- Stacked card fan -->
-            <div class="absolute -left-5 -top-2 w-16 h-22 rounded-xl opacity-30" style="background:linear-gradient(135deg,#374151,#1f2937);border:1px solid rgba(255,255,255,.1);transform:rotate(-8deg)"></div>
-            <div class="absolute -left-2 -top-1 w-16 h-22 rounded-xl opacity-50" style="background:linear-gradient(135deg,#4b5563,#374151);border:1px solid rgba(255,255,255,.1);transform:rotate(-3deg)"></div>
-            <div class="relative w-16 h-22 rounded-xl flex items-center justify-center text-3xl shadow-2xl" style="background:linear-gradient(135deg,#d97706,#fbbf24,#a78bfa);font-size:28px">⚡</div>
-          </div>
-        </div>
+        <div class="text-5xl mb-4">&#128230;</div>
         <p class="text-xl font-bold text-white mb-2">Drop your ZIP archive here</p>
         <p class="text-sm text-zinc-500 mb-6">Up to 2 GB &middot; up to 3,000 images per batch</p>
-        <label class="btn-primary inline-flex items-center gap-2 cursor-pointer">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          Browse Files
+        <label class="btn-primary cursor-pointer">
+          &#128194; Browse Files
           <input type="file" accept=".zip" class="hidden" @change="handleFileSelect($event)"/>
         </label>
       </div>
-
-      <!-- File selected -->
       <div x-show="uploadFile" class="flex items-center justify-between max-w-md mx-auto">
         <div class="flex items-center gap-4">
-          <div class="w-14 h-14 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
-               style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3)">📦</div>
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3)">&#128451;</div>
           <div class="text-left">
             <p class="font-semibold text-white" x-text="uploadFile?.name"></p>
-            <p class="text-xs text-zinc-500 mt-0.5" x-text="fmtSize(uploadFile?.size||0)"></p>
+            <p class="text-xs text-zinc-500" x-text="fmtSize(uploadFile?.size||0)"></p>
           </div>
         </div>
-        <button @click="uploadFile=null"
-                class="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
-                style="background:#1e1e1e">✕</button>
+        <button @click="uploadFile=null" class="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-white" style="background:#1e1e1e">&times;</button>
       </div>
     </div>
 
     <!-- Submit -->
     <div class="flex justify-center" x-show="uploadFile">
-      <button @click="startJob()" :disabled="uploading" class="btn-primary flex items-center gap-3">
-        <span x-show="uploading" class="inline-block w-4 h-4 border-2 border-obsidian-950 border-t-transparent rounded-full animate-spin flex-shrink-0"></span>
-        <svg x-show="!uploading" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-        <span x-text="uploading?'Uploading…':'Enhance Cards'"></span>
+      <button @click="startJob()" :disabled="uploading" class="btn-primary">
+        <span x-show="uploading" class="w-4 h-4 border-2 border-zinc-900 border-t-transparent rounded-full animate-spin"></span>
+        <span x-text="uploading ? 'Uploading…' : '&#9889; Enhance Cards'"></span>
       </button>
     </div>
   </div>
 
-  <!-- ══ JOBS TAB ═════════════════════════════════════════════════ -->
+  <!-- JOBS TAB -->
   <div x-show="activeTab==='jobs'" x-cloak>
     <div class="flex items-center justify-between mb-6">
-      <h2 class="font-display text-xl font-bold text-white">Job Queue</h2>
+      <h2 class="text-xl font-bold text-white">Job Queue</h2>
       <span class="text-xs text-zinc-500" x-text="jobs.length + ' total'"></span>
     </div>
-
     <div x-show="jobs.length===0" class="text-center py-32">
-      <div class="text-6xl mb-4">🃏</div>
+      <div class="text-5xl mb-4">&#128237;</div>
       <p class="text-zinc-400 font-medium">No jobs yet</p>
       <p class="text-zinc-600 text-sm mt-1">Upload a ZIP to get started</p>
     </div>
-
     <div class="space-y-3">
       <template x-for="job in jobs" :key="job.job_id">
         <div class="panel p-5">
           <div class="flex items-center justify-between mb-3 flex-wrap gap-3">
             <div class="flex items-center gap-3">
               <span class="font-mono text-sm text-zinc-300" x-text="job.job_id.slice(0,12)+'…'"></span>
-              <span class="text-xs text-zinc-600" x-text="job.backend_used||'LaMa+SwinIR+ESRGAN'"></span>
+              <span class="text-xs text-zinc-600" x-text="job.backend_used||''"></span>
             </div>
             <div class="flex items-center gap-2">
               <span x-show="job.elapsed_seconds" class="text-xs text-zinc-500" x-text="job.elapsed_seconds?.toFixed(1)+'s'"></span>
-              <span class="badge"
-                    :class="{
-                      'badge-processing':['processing'].includes(job.status),
-                      'badge-analyzing': job.status==='analyzing',
-                      'badge-completed': ['completed','partially_completed'].includes(job.status),
-                      'badge-failed':    job.status==='failed',
-                      'badge-pending':   ['pending','cancelled'].includes(job.status),
-                    }"
-                    x-text="job.status"></span>
+              <span class="badge" :class="'badge-'+job.status" x-text="job.status"></span>
               <button x-show="['processing','analyzing','pending'].includes(job.status)"
                       @click="cancelJob(job.job_id)"
                       class="text-xs px-2.5 py-1 rounded-lg text-red-400 transition-colors"
                       style="background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.2)">Cancel</button>
             </div>
           </div>
-
           <!-- Progress -->
           <div x-show="['processing','analyzing'].includes(job.status)">
             <div class="flex justify-between text-xs text-zinc-500 mb-2">
               <span x-text="job.message||'Processing…'"></span>
-              <span class="text-gold-400 font-semibold" x-text="(job.progress||0)+'%'"></span>
+              <span class="text-yellow-400 font-semibold" x-text="(job.progress||0)+'%'"></span>
             </div>
             <div class="h-1.5 rounded-full overflow-hidden" style="background:#1e1e1e">
-              <div class="progress-glow h-full rounded-full transition-all duration-500"
-                   :style="'width:'+(job.progress||0)+'%'"></div>
+              <div class="progress-glow h-full rounded-full transition-all duration-500" :style="'width:'+(job.progress||0)+'%'"></div>
             </div>
             <div class="flex gap-4 text-[11px] text-zinc-600 mt-2">
-              <span>✓ <span x-text="job.completed_images||0"></span> done</span>
-              <span>✕ <span x-text="job.failed_images||0"></span> failed</span>
-              <span>⌀ <span x-text="job.total_images||0"></span> total</span>
+              <span>&#10003; <span x-text="job.completed_images||0"></span> done</span>
+              <span>&#10005; <span x-text="job.failed_images||0"></span> failed</span>
+              <span>&#8773; <span x-text="job.total_images||0"></span> total</span>
             </div>
           </div>
-
           <!-- View results -->
           <div x-show="['completed','partially_completed'].includes(job.status)" class="mt-2">
             <button @click="viewResults(job.job_id)"
-                    class="text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors"
-                    style="background:rgba(251,191,36,.1);color:#fbbf24;border:1px solid rgba(251,191,36,.25)">
-              View Results →
-            </button>
+                    class="text-xs px-3 py-1.5 rounded-lg font-semibold"
+                    style="background:rgba(251,191,36,.1);color:#fbbf24;border:1px solid rgba(251,191,36,.25)">View Results &rarr;</button>
           </div>
         </div>
       </template>
     </div>
   </div>
 
-  <!-- ══ RESULTS TAB ══════════════════════════════════════════════ -->
+  <!-- RESULTS TAB -->
   <div x-show="activeTab==='results'" x-cloak>
-
     <!-- Toolbar -->
     <div x-show="selectedJobId" class="flex items-center justify-between mb-6 flex-wrap gap-3">
       <div class="flex items-center gap-3">
-        <button @click="activeTab='jobs'"
-                class="text-zinc-400 hover:text-white text-sm flex items-center gap-1.5 transition-colors">
-          ← Back
-        </button>
+        <button @click="activeTab='jobs'" class="text-zinc-400 hover:text-white text-sm transition-colors">&larr; Back</button>
         <div class="w-px h-4 bg-zinc-700"></div>
-        <h2 class="font-display text-lg font-bold text-white">Results</h2>
+        <h2 class="text-lg font-bold text-white">Results</h2>
         <span class="text-xs text-zinc-600 font-mono" x-text="selectedJobId?.slice(0,12)+'…'"></span>
         <span class="text-xs text-zinc-500" x-text="currentResults.length+' images'"></span>
       </div>
       <div class="flex items-center gap-2">
-        <button @click="viewMode='grid'"
-                class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                :style="viewMode==='grid'
-                  ? 'background:linear-gradient(135deg,#d97706,#fbbf24);color:#080808'
-                  : 'background:#1e1e1e;color:#71717a;border:1px solid rgba(255,255,255,.07)'">Grid</button>
-        <button @click="viewMode='compare'"
-                class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                :style="viewMode==='compare'
-                  ? 'background:linear-gradient(135deg,#d97706,#fbbf24);color:#080808'
-                  : 'background:#1e1e1e;color:#71717a;border:1px solid rgba(255,255,255,.07)'">Compare</button>
-        <button @click="downloadAll()"
-                class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-                style="background:rgba(52,211,153,.1);color:#34d399;border:1px solid rgba(52,211,153,.25)">
-          ↓ Download All
-        </button>
+        <button @click="viewMode='grid'" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                :style="viewMode==='grid' ? 'background:linear-gradient(135deg,#d97706,#fbbf24);color:#080808' : 'background:#1e1e1e;color:#71717a;border:1px solid rgba(255,255,255,.07)'">Grid</button>
+        <button @click="viewMode='compare'" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                :style="viewMode==='compare' ? 'background:linear-gradient(135deg,#d97706,#fbbf24);color:#080808' : 'background:#1e1e1e;color:#71717a;border:1px solid rgba(255,255,255,.07)'">Compare</button>
+        <button @click="downloadAll()" class="px-3 py-1.5 rounded-lg text-xs font-semibold" style="background:rgba(52,211,153,.1);color:#34d399;border:1px solid rgba(52,211,153,.25)">&darr; Download All</button>
       </div>
     </div>
-
     <!-- Grid -->
-    <div x-show="viewMode==='grid'"
-         class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+    <div x-show="viewMode==='grid'" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
       <template x-for="img in currentResults" :key="img.filename">
         <div class="result-card panel-sm overflow-hidden group" @click="openCompare(img)">
           <div class="aspect-[3/4] relative overflow-hidden" style="background:#0e0e0e">
-            <img :src="'/v1/image/'+selectedJobId+'/'+img.filename"
-                 :alt="img.filename"
-                 class="w-full h-full object-cover"
-                 loading="lazy"/>
-            <div class="absolute inset-0 flex items-end p-3 opacity-0 group-hover:opacity-100 transition-opacity"
-                 style="background:linear-gradient(to top,rgba(0,0,0,.85),transparent)">
+            <img :src="'/v1/image/'+selectedJobId+'/'+img.filename" :alt="img.filename" class="w-full h-full object-cover" loading="lazy"/>
+            <div class="absolute inset-0 flex items-end p-3 opacity-0 group-hover:opacity-100 transition-opacity" style="background:linear-gradient(to top,rgba(0,0,0,.85),transparent)">
               <span class="text-xs text-white font-medium truncate w-full" x-text="img.filename"></span>
-            </div>
-            <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-              <div class="w-7 h-7 rounded-lg flex items-center justify-center text-xs"
-                   style="background:rgba(251,191,36,.9);color:#080808">⟳</div>
             </div>
           </div>
           <div class="p-3">
             <p class="text-xs text-white font-semibold truncate mb-1" x-text="img.filename"></p>
             <div class="flex items-center justify-between text-[10px] text-zinc-600">
               <span x-text="img.original_size||'—'"></span>
-              <span class="text-gold-500">→</span>
-              <span class="text-gold-400 font-semibold" x-text="img.enhanced_size||'—'"></span>
+              <span class="text-yellow-500">&rarr;</span>
+              <span class="text-yellow-400 font-semibold" x-text="img.enhanced_size||'—'"></span>
             </div>
             <p class="text-[10px] text-zinc-700 mt-0.5" x-text="(img.processing_time_ms||0)+'ms'"></p>
           </div>
         </div>
       </template>
     </div>
-
-    <!-- Compare -->
+    <!-- Compare slider -->
     <div x-show="viewMode==='compare'&&compareImage" x-cloak>
       <div class="panel overflow-hidden">
         <div class="relative select-none" style="max-height:70vh">
-          <img :src="'/v1/image/'+selectedJobId+'/'+compareImage?.filename"
-               class="w-full object-contain" style="max-height:70vh"/>
-          <div class="slider-overlay" :style="'width:'+sliderPos+'%'">
-            <img :src="'/v1/original/'+selectedJobId+'/'+compareImage?.filename"
-                 class="object-cover h-full" style="min-width:400%"/>
+          <img :src="'/v1/image/'+selectedJobId+'/'+compareImage?.filename" class="w-full object-contain" style="max-height:70vh"/>
+          <div class="slider-handle" :style="'width:'+sliderPos+'%'">
+            <img :src="'/v1/original/'+selectedJobId+'/'+compareImage?.filename" class="object-cover h-full" style="min-width:400%"/>
           </div>
-          <input type="range" min="0" max="100" x-model.number="sliderPos"
-                 class="absolute bottom-4 left-1/2 -translate-x-1/2 w-1/2 cursor-pointer"
-                 style="accent-color:#fbbf24"/>
-          <div class="absolute top-3 left-3 text-[10px] px-2.5 py-1 rounded-lg font-bold"
-               style="background:rgba(0,0,0,.8);color:#94a3b8">ORIGINAL</div>
-          <div class="absolute top-3 right-3 text-[10px] px-2.5 py-1 rounded-lg font-bold"
-               style="background:linear-gradient(135deg,#d97706,#fbbf24);color:#080808">ENHANCED</div>
+          <input type="range" min="0" max="100" x-model.number="sliderPos" class="absolute bottom-4 left-1/2 -translate-x-1/2 w-1/2" style="accent-color:#fbbf24"/>
+          <div class="absolute top-3 left-3 text-[10px] px-2.5 py-1 rounded-lg font-bold" style="background:rgba(0,0,0,.8);color:#94a3b8">ORIGINAL</div>
+          <div class="absolute top-3 right-3 text-[10px] px-2.5 py-1 rounded-lg font-bold" style="background:linear-gradient(135deg,#d97706,#fbbf24);color:#080808">ENHANCED</div>
         </div>
         <div class="p-5 flex items-center justify-between flex-wrap gap-3">
           <div>
             <p class="text-sm font-semibold text-white" x-text="compareImage?.filename"></p>
-            <p class="text-xs text-zinc-500 mt-0.5"
-               x-text="(compareImage?.original_size||'—')+' → '+(compareImage?.enhanced_size||'—')+' · '+(compareImage?.processing_time_ms||0)+'ms'"></p>
+            <p class="text-xs text-zinc-500 mt-0.5" x-text="(compareImage?.original_size||'—')+' → '+(compareImage?.enhanced_size||'—')+' · '+(compareImage?.processing_time_ms||0)+'ms'"></p>
           </div>
           <div class="flex gap-2">
-            <button @click="sliderPos=0" class="text-xs px-3 py-1.5 rounded-lg text-zinc-300 transition-colors"
-                    style="background:#1e1e1e;border:1px solid rgba(255,255,255,.08)">Original</button>
-            <button @click="sliderPos=100" class="text-xs px-3 py-1.5 rounded-lg transition-colors"
-                    style="background:rgba(251,191,36,.1);color:#fbbf24;border:1px solid rgba(251,191,36,.25)">Enhanced</button>
-            <a :href="'/v1/image/'+selectedJobId+'/'+compareImage?.filename"
-               :download="compareImage?.filename"
-               class="text-xs px-3 py-1.5 rounded-lg transition-colors"
-               style="background:rgba(52,211,153,.1);color:#34d399;border:1px solid rgba(52,211,153,.25)">↓ Save</a>
+            <button @click="sliderPos=0" class="text-xs px-3 py-1.5 rounded-lg text-zinc-300" style="background:#1e1e1e;border:1px solid rgba(255,255,255,.08)">Original</button>
+            <button @click="sliderPos=100" class="text-xs px-3 py-1.5 rounded-lg" style="background:rgba(251,191,36,.1);color:#fbbf24;border:1px solid rgba(251,191,36,.25)">Enhanced</button>
+            <a :href="'/v1/image/'+selectedJobId+'/'+compareImage?.filename" :download="compareImage?.filename" class="text-xs px-3 py-1.5 rounded-lg" style="background:rgba(52,211,153,.1);color:#34d399;border:1px solid rgba(52,211,153,.25)">&darr; Save</a>
           </div>
         </div>
       </div>
-      <!-- Filmstrip -->
       <div class="flex gap-2 mt-4 overflow-x-auto pb-2">
         <template x-for="img in currentResults" :key="img.filename">
-          <button @click="compareImage=img;sliderPos=50"
-                  class="flex-shrink-0 w-14 h-20 rounded-lg overflow-hidden border-2 transition-all"
-                  :style="compareImage?.filename===img.filename
-                    ? 'border-color:#fbbf24;box-shadow:0 0 12px rgba(251,191,36,.4)'
-                    : 'border-color:transparent'">
-            <img :src="'/v1/image/'+selectedJobId+'/'+img.filename"
-                 class="w-full h-full object-cover" loading="lazy"/>
+          <button @click="compareImage=img;sliderPos=50" class="flex-shrink-0 w-14 h-20 rounded-lg overflow-hidden border-2 transition-all"
+                  :style="compareImage?.filename===img.filename ? 'border-color:#fbbf24;box-shadow:0 0 12px rgba(251,191,36,.4)' : 'border-color:transparent'">
+            <img :src="'/v1/image/'+selectedJobId+'/'+img.filename" class="w-full h-full object-cover" loading="lazy"/>
           </button>
         </template>
       </div>
     </div>
-
     <!-- Empty -->
     <div x-show="!selectedJobId" class="text-center py-32">
-      <div class="text-6xl mb-4">🖼️</div>
+      <div class="text-5xl mb-4">&#128444;&#65039;</div>
       <p class="text-zinc-400 font-medium">No results selected</p>
       <p class="text-zinc-600 text-sm mt-1">Pick a completed job from the Jobs tab</p>
     </div>
@@ -589,11 +341,10 @@
 
 </main>
 
-<!-- ══ FOOTER ════════════════════════════════════════════════════ -->
 <footer class="mt-16 border-t py-5 px-6" style="border-color:rgba(255,255,255,.05)">
   <div class="max-w-7xl mx-auto flex items-center justify-between text-xs text-zinc-600">
-    <span>Card Enhancer AI · <span class="holo-text font-semibold" x-text="system.version?'v'+system.version:'v5.0.0'"></span></span>
-    <span x-text="system.active_backend||'LaMa + SwinIR + Real-ESRGAN'"></span>
+    <span>Card Enhancer AI <span x-text="system.version?'v'+system.version:''"></span></span>
+    <span x-text="system.active_backend||''"></span>
   </div>
 </footer>
 
@@ -633,24 +384,24 @@ function app() {
     },
 
     async loadSystem() {
-      try { this.system = await (await fetch('/v1/system')).json(); } catch(_) {}
+      try { this.system = await (await fetch('/v1/system')).json(); } catch(_){}
     },
 
     async loadPresets() {
       try {
         const d = await (await fetch('/v1/presets')).json();
-        this.presets = d.presets;
-      } catch(_) {}
+        this.presets = d.presets || [];
+      } catch(_){}
     },
 
     async pollJobs() {
       for (let i = 0; i < this.jobs.length; i++) {
-        const job = this.jobs[i];
-        if (['completed','failed','cancelled'].includes(job.status)) continue;
+        const j = this.jobs[i];
+        if (['completed','failed','cancelled'].includes(j.status)) continue;
         try {
-          const d = await (await fetch('/v1/batch/status/' + job.job_id)).json();
+          const d = await (await fetch('/v1/batch/status/'+j.job_id)).json();
           this.jobs[i] = { ...this.jobs[i], ...d };
-        } catch(_) {}
+        } catch(_){}
       }
     },
 
@@ -659,10 +410,7 @@ function app() {
       const f = e.dataTransfer.files[0];
       if (f && f.name.endsWith('.zip')) this.uploadFile = f;
     },
-
-    handleFileSelect(e) {
-      if (e.target.files[0]) this.uploadFile = e.target.files[0];
-    },
+    handleFileSelect(e) { if (e.target.files[0]) this.uploadFile = e.target.files[0]; },
 
     async startJob() {
       if (!this.uploadFile || this.uploading) return;
@@ -670,15 +418,27 @@ function app() {
       const fd = new FormData();
       fd.append('zip_file', this.uploadFile);
       if (this.selectedPreset === 'custom') {
-        fd.append('settings_json', JSON.stringify(this.custom));
+        // Only send real keys the backend reads
+        const opts = {
+          upscale_factor:   this.custom.upscale_factor,
+          format:           this.custom.format,
+          quality:          this.custom.quality,
+          denoise:          !!this.custom.denoise_strength,
+          denoise_strength: this.custom.denoise_strength || 'medium',
+          sharpen:          this.custom.sharpen,
+          sharpen_strength: this.custom.sharpen_strength,
+          auto_contrast:    this.custom.auto_contrast,
+          color_correct:    this.custom.color_correct,
+        };
+        fd.append('settings_json', JSON.stringify(opts));
       } else {
         fd.append('preset', this.selectedPreset);
       }
       try {
-        const res  = await fetch('/v1/batch/upload', { method: 'POST', body: fd });
+        const res  = await fetch('/v1/batch/upload', { method:'POST', body:fd });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Upload failed');
-        this.jobs.unshift({ ...data, progress: 0, elapsed_seconds: 0 });
+        this.jobs.unshift({ ...data, progress:0, elapsed_seconds:0 });
         this.activeTab  = 'jobs';
         this.uploadFile = null;
         this.connectWS(data.job_id);
@@ -701,20 +461,20 @@ function app() {
       this.ws.onclose = () => {
         setTimeout(async () => {
           try {
-            const d   = await (await fetch('/v1/batch/status/' + jobId)).json();
+            const d   = await (await fetch('/v1/batch/status/'+jobId)).json();
             const idx = this.jobs.findIndex(j => j.job_id === jobId);
             if (idx >= 0) this.jobs[idx] = { ...this.jobs[idx], ...d };
-          } catch(_) {}
+          } catch(_){}
         }, 1000);
       };
     },
 
     async cancelJob(jobId) {
       try {
-        await fetch('/v1/batch/' + jobId, { method: 'DELETE' });
+        await fetch('/v1/batch/'+jobId, { method:'DELETE' });
         const idx = this.jobs.findIndex(j => j.job_id === jobId);
         if (idx >= 0) this.jobs[idx].status = 'cancelled';
-      } catch(_) {}
+      } catch(_){}
     },
 
     async viewResults(jobId) {
@@ -723,23 +483,18 @@ function app() {
       this.compareImage   = null;
       this.viewMode       = 'grid';
       try {
-        const d = await (await fetch('/v1/batch/results/' + jobId)).json();
+        const d = await (await fetch('/v1/batch/results/'+jobId)).json();
         this.currentResults = d.results || [];
-      } catch(_) {}
+      } catch(_){}
     },
 
-    openCompare(img) {
-      this.compareImage = img;
-      this.viewMode     = 'compare';
-      this.sliderPos    = 50;
-    },
+    openCompare(img) { this.compareImage=img; this.viewMode='compare'; this.sliderPos=50; },
 
     downloadAll() {
       if (!this.selectedJobId) return;
       this.currentResults.forEach(img => {
-        if (img.status !== 'completed') return;
         const a = document.createElement('a');
-        a.href     = '/v1/image/' + this.selectedJobId + '/' + img.filename;
+        a.href     = '/v1/image/'+this.selectedJobId+'/'+img.filename;
         a.download = img.filename;
         document.body.appendChild(a);
         a.click();
@@ -748,18 +503,13 @@ function app() {
     },
 
     presetIcon(name) {
-      const icons = { mint_card:'💎', worn_card:'🃏', damaged_card:'🔧', web_ready:'🌐', print_ready:'🖨️' };
-      return icons[name] || '⚙️';
+      return { mint_card:'&#128142;', worn_card:'&#127183;', damaged_card:'&#128296;', web_ready:'&#127760;', print_ready:'&#128424;&#65039;' }[name] || '&#9881;';
     },
-
-    fmtPreset(n) {
-      return n.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
-    },
-
+    fmtPreset(n) { return n.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()); },
     fmtSize(b) {
-      if (b < 1024)    return b + ' B';
-      if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
-      return (b/1048576).toFixed(1) + ' MB';
+      if (b<1024) return b+' B';
+      if (b<1048576) return (b/1024).toFixed(1)+' KB';
+      return (b/1048576).toFixed(1)+' MB';
     },
   };
 }

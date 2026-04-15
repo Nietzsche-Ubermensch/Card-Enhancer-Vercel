@@ -4,10 +4,6 @@ __pycache__/
 *.db
 *.db-journal
 
-# Secrets — never commit the real .env
-.env
-!.env.example
-
 # Runtime directories (content, not the dirs themselves)
 outputs/*
 temp/*
@@ -22,7 +18,8 @@ uploads/*
 *.swp
 *.swo
 
-# Environment
+# Environment — never commit the real .env
+.env
 .venv/
 venv/
 env/

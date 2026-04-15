@@ -41,11 +41,15 @@ class RealESRGANBackend:
         t0 = time.time()
 
         # Stage 0 — card crop
-        try:
-            img = self._crop_card(img)
-            log.info(f"[Pipeline] Crop -> {img.size}")
-        except Exception as exc:
-            log.warning(f"[Pipeline] Crop skipped: {exc}")
+        # Skipped if YOLO already cropped upstream (enhancement_service sets _skip_crop)
+        if not opts.get("_skip_crop", False):
+            try:
+                img = self._crop_card(img)
+                log.info(f"[Pipeline] Crop -> {img.size}")
+            except Exception as exc:
+                log.warning(f"[Pipeline] Crop skipped: {exc}")
+        else:
+            log.info("[Pipeline] Contour crop skipped (YOLO already ran)")
 
         # Stage 1 — LaMa scratch inpainting
         try:

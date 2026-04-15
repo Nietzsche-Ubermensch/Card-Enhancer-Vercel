@@ -24,6 +24,11 @@ uploads/*
 venv/
 env/
 
+# Model weights (large binary files)
+models/*.pt
+models/*.onnx
+runs/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -44,7 +44,7 @@ jobs:
   pipeline-test:
     needs: validate-secrets
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     env:
       HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
@@ -63,6 +63,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Check YOLO availability
+        id: yolo_check
+        run: |
+          python -c "
+          from app.services.card_detector import is_available
+          avail = is_available()
+          print(f'YOLO available: {avail}')
+          " 2>&1 || true
+          # YOLO is optional — missing weights is fine, the pipeline still works
+
       - name: Generate deterministic test card
         run: |
           python tests/generate_test_card.py \
@@ -71,26 +81,26 @@ jobs:
           echo "TEST_INPUT=tests/fixtures/test_card.png" >> "$GITHUB_ENV"
           echo "TEST_OUTPUT=tests/fixtures/output_card.png" >> "$GITHUB_ENV"
 
-      - name: Run Real-ESRGAN pipeline
+      - name: Run full enhancement pipeline
         id: pipeline
         run: |
           START=$(date +%s.%N)
 
           python -c "
-          import os, sys
+          import os
           os.environ['UPSCALE_BACKEND'] = 'realesrgan'
 
-          from app.services.upscalers.realesrgan_backend import RealESRGANBackend
+          from app.services.enhancement_service import EnhancementService
 
-          backend = RealESRGANBackend()
-          result = backend.enhance(
+          svc = EnhancementService()
+          result = svc.enhance_image(
               input_path='${{ env.TEST_INPUT }}',
-              output_path='${{ env.TEST_OUTPUT }}',
               opts={
                   'upscale_factor': 4,
                   'denoise': True,
                   'format': 'png',
                   'quality': 95,
+                  'auto_crop': True,
               },
           )
           print(f'Pipeline output: {result}')

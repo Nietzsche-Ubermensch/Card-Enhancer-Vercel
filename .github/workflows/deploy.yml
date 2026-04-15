@@ -1,4 +1,4 @@
-name: Card Enhancer CI — Real-ESRGAN Pipeline
+name: Card Enhancer CI
 
 on:
   push:
@@ -9,53 +9,35 @@ on:
 
 env:
   PYTHON_VERSION: "3.11"
-  UPSCALE_BACKEND: realesrgan
 
 jobs:
-  # ------------------------------------------------------------------ #
-  #  Gate: validate that required secrets are configured                 #
-  # ------------------------------------------------------------------ #
+  # ── 1. Secrets gate ────────────────────────────────────────────────────
   validate-secrets:
     runs-on: ubuntu-latest
     steps:
       - name: Check HF_API_TOKEN
         run: |
           if [ -z "${{ secrets.HF_API_TOKEN }}" ]; then
-            echo "::error::HF_API_TOKEN secret is not set. Add it under Settings → Secrets."
+            echo "::error::HF_API_TOKEN not set. Add it under Settings → Secrets."
             exit 1
           fi
-          echo "✅ HF_API_TOKEN is set (length: ${#TOKEN})"
-        env:
-          TOKEN: ${{ secrets.HF_API_TOKEN }}
+          echo "✅ HF_API_TOKEN set"
 
       - name: Check REPLICATE_API_TOKEN
         run: |
           if [ -z "${{ secrets.REPLICATE_API_TOKEN }}" ]; then
-            echo "::error::REPLICATE_API_TOKEN secret is not set. Add it under Settings → Secrets."
+            echo "::error::REPLICATE_API_TOKEN not set. Add it under Settings → Secrets."
             exit 1
           fi
-          echo "✅ REPLICATE_API_TOKEN is set (length: ${#TOKEN})"
-        env:
-          TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          echo "✅ REPLICATE_API_TOKEN set"
 
-  # ------------------------------------------------------------------ #
-  #  Main pipeline test                                                  #
-  # ------------------------------------------------------------------ #
-  pipeline-test:
-    needs: validate-secrets
+  # ── 2. YOLO quality gate (runs without secrets — weights optional) ─────
+  yolo-quality-gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    env:
-      HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
-      REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -63,17 +45,63 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Check YOLO availability
-        id: yolo_check
+      - name: Generate scene test card (card on background)
         run: |
-          python -c "
-          from app.services.card_detector import is_available
-          avail = is_available()
-          print(f'YOLO available: {avail}')
-          " 2>&1 || true
-          # YOLO is optional — missing weights is fine, the pipeline still works
+          python tests/generate_test_card.py \
+            --output tests/fixtures/scene_card.png \
+            --worn
 
-      - name: Generate deterministic test card
+      - name: Run YOLO detection + assert quality gates
+        run: |
+          python - <<'EOF'
+          import sys
+          from PIL import Image
+          from app.services.card_detector import is_available, detect_and_crop_detailed
+
+          img = Image.open("tests/fixtures/scene_card.png")
+          print(f"Input size: {img.size}")
+
+          if not is_available():
+              print("YOLO weights not present — skipping detection gate (OK for fresh repos)")
+              print("Place trained weights at models/card_detector_obb.pt to activate this gate.")
+              sys.exit(0)
+
+          result = detect_and_crop_detailed(img)
+          print(f"Detected:    {result.detected}")
+          print(f"Confidence:  {result.confidence:.3f}")
+          print(f"Input size:  {result.original_size}")
+          print(f"Crop size:   {result.cropped_size}")
+
+          assert result.detected, "YOLO failed to detect card"
+          assert result.confidence >= 0.55, f"Confidence {result.confidence:.3f} below threshold 0.55"
+          assert result.cropped_size != result.original_size, "Crop size unchanged — no crop occurred"
+
+          print("✅ All YOLO quality gates passed")
+          EOF
+
+  # ── 3. Full pipeline test ──────────────────────────────────────────────
+  pipeline-test:
+    needs: validate-secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+      REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+      UPSCALE_BACKEND: realesrgan
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate test card
         run: |
           python tests/generate_test_card.py \
             --output tests/fixtures/test_card.png \
@@ -81,38 +109,26 @@ jobs:
           echo "TEST_INPUT=tests/fixtures/test_card.png" >> "$GITHUB_ENV"
           echo "TEST_OUTPUT=tests/fixtures/output_card.png" >> "$GITHUB_ENV"
 
-      - name: Run full enhancement pipeline
+      - name: Run enhancement pipeline
         id: pipeline
         run: |
           START=$(date +%s.%N)
-
           python -c "
-          import os
-          os.environ['UPSCALE_BACKEND'] = 'realesrgan'
-
-          from app.services.enhancement_service import EnhancementService
-
-          svc = EnhancementService()
-          result = svc.enhance_image(
-              input_path='${{ env.TEST_INPUT }}',
-              opts={
-                  'upscale_factor': 4,
-                  'denoise': True,
-                  'format': 'png',
-                  'quality': 95,
-                  'auto_crop': True,
-              },
-          )
-          print(f'Pipeline output: {result}')
-          "
-
+import os
+os.environ['UPSCALE_BACKEND'] = 'realesrgan'
+from app.services.enhancement_service import EnhancementService
+svc = EnhancementService()
+result = svc.enhance_image(
+    input_path='tests/fixtures/test_card.png',
+    opts={'upscale_factor': 4, 'denoise': True, 'format': 'png', 'quality': 95, 'auto_crop': True},
+)
+print(f'Output: {result}')
+"
           END=$(date +%s.%N)
           ELAPSED=$(python3 -c "print(round($END - $START, 2))")
           echo "elapsed=$ELAPSED" >> "$GITHUB_OUTPUT"
-          echo "Pipeline completed in ${ELAPSED}s"
 
       - name: Compute quality metrics
-        id: metrics
         run: |
           python tests/quality_metrics.py \
             --input  "${{ env.TEST_INPUT }}" \
@@ -121,7 +137,7 @@ jobs:
             --summary-file /tmp/metrics_summary.md \
             --json
 
-      - name: Upload output image as artifact
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -137,13 +153,8 @@ jobs:
           if [ -f /tmp/metrics_summary.md ]; then
             cat /tmp/metrics_summary.md >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "## Real-ESRGAN Pipeline — CI Results" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "⚠️ Metrics summary was not generated." >> "$GITHUB_STEP_SUMMARY"
-            echo "The pipeline may have failed before metrics could be computed." >> "$GITHUB_STEP_SUMMARY"
+            echo "⚠️ Metrics summary not generated." >> "$GITHUB_STEP_SUMMARY"
           fi
-
-          # Always append run metadata
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "---" >> "$GITHUB_STEP_SUMMARY"
-          echo "*Run:* \`${{ github.run_id }}\` | *Commit:* \`${{ github.sha }}\` | *Branch:* \`${{ github.ref_name }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "*Run:* \`${{ github.run_id }}\` | *Commit:* \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"

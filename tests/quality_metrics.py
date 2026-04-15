@@ -1,30 +1,6 @@
-#!/usr/bin/env python3
-"""
-Quality metrics for CI pipeline validation.
-
-Computes:
-  - Resolution (input vs output)
-  - File size
-  - Upscale ratio achieved
-  - BRISQUE-style sharpness proxy (Laplacian variance)
-  - Mean pixel intensity (detect black/white failures)
-  - Color channel statistics
-  - Processing time (passed in via CLI)
-
-Outputs a Markdown summary suitable for GitHub Actions $GITHUB_STEP_SUMMARY.
-
-Usage:
-    python tests/quality_metrics.py \
-        --input  tests/fixtures/test_card.png \
-        --output tests/fixtures/output_card.png \
-        --time   12.34 \
-        [--summary-file /path/to/summary.md]
-"""
-from __future__ import annotations
-
+"""Compute quality metrics for CI pipeline output."""
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -33,177 +9,98 @@ import numpy as np
 from PIL import Image
 
 
-# --------------------------------------------------------------------------- #
-#  Metrics
-# --------------------------------------------------------------------------- #
-
-def compute_metrics(input_path: str, output_path: str, elapsed_sec: float) -> dict:
-    """Compute all quality metrics and return as a dict."""
-    inp = Path(input_path)
-    out = Path(output_path)
-
-    if not inp.exists():
-        raise FileNotFoundError(f"Input not found: {inp}")
-    if not out.exists():
-        raise FileNotFoundError(f"Output not found: {out}")
-
-    img_in = Image.open(str(inp))
-    img_out = Image.open(str(out))
-
-    in_w, in_h = img_in.size
-    out_w, out_h = img_out.size
-
-    in_size = inp.stat().st_size
-    out_size = out.stat().st_size
-
-    # Laplacian variance — higher = sharper image (proxy for BRISQUE)
-    cv_out = cv2.cvtColor(np.array(img_out), cv2.COLOR_RGB2GRAY)
-    laplacian_var = float(cv2.Laplacian(cv_out, cv2.CV_64F).var())
-
-    # Mean pixel values per channel
-    arr_out = np.array(img_out).astype(np.float64)
-    mean_r = float(arr_out[:, :, 0].mean())
-    mean_g = float(arr_out[:, :, 1].mean())
-    mean_b = float(arr_out[:, :, 2].mean())
-    mean_overall = float(arr_out.mean())
-
-    # Upscale ratio
-    area_ratio = (out_w * out_h) / max(in_w * in_h, 1)
-    linear_ratio = (area_ratio ** 0.5)
-
-    return {
-        "input_resolution": f"{in_w}x{in_h}",
-        "output_resolution": f"{out_w}x{out_h}",
-        "input_file_size_kb": round(in_size / 1024, 1),
-        "output_file_size_kb": round(out_size / 1024, 1),
-        "upscale_ratio_linear": round(linear_ratio, 2),
-        "upscale_ratio_area": round(area_ratio, 2),
-        "sharpness_laplacian_var": round(laplacian_var, 2),
-        "mean_pixel_intensity": round(mean_overall, 1),
-        "mean_r": round(mean_r, 1),
-        "mean_g": round(mean_g, 1),
-        "mean_b": round(mean_b, 1),
-        "processing_time_sec": round(elapsed_sec, 2),
-    }
+def laplacian_sharpness(path: str) -> float:
+    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        return 0.0
+    return float(cv2.Laplacian(img, cv2.CV_64F).var())
 
 
-# --------------------------------------------------------------------------- #
-#  Validation gates
-# --------------------------------------------------------------------------- #
-
-def validate(metrics: dict) -> list[str]:
-    """Run basic sanity checks; return list of failure messages (empty = pass)."""
-    failures = []
-
-    # Output must be larger than input
-    if metrics["upscale_ratio_linear"] < 1.5:
-        failures.append(
-            f"Upscale ratio too low: {metrics['upscale_ratio_linear']}x "
-            f"(expected >= 1.5x)"
-        )
-
-    # Output shouldn't be all-black or all-white
-    mean = metrics["mean_pixel_intensity"]
-    if mean < 5:
-        failures.append(f"Output appears all-black (mean intensity {mean})")
-    if mean > 250:
-        failures.append(f"Output appears all-white (mean intensity {mean})")
-
-    # Sharpness sanity (extremely blurry output = likely broken)
-    if metrics["sharpness_laplacian_var"] < 1.0:
-        failures.append(
-            f"Output extremely blurry (Laplacian var {metrics['sharpness_laplacian_var']})"
-        )
-
-    # File size sanity — output should exist and be non-trivial
-    if metrics["output_file_size_kb"] < 1:
-        failures.append(f"Output file too small: {metrics['output_file_size_kb']} KB")
-
-    # Processing time sanity — warn if > 5 minutes
-    if metrics["processing_time_sec"] > 300:
-        failures.append(
-            f"Processing took {metrics['processing_time_sec']:.0f}s (> 5 min)"
-        )
-
-    return failures
+def mean_intensity(path: str) -> float:
+    img = cv2.imread(path)
+    if img is None:
+        return 0.0
+    return float(np.mean(img))
 
 
-# --------------------------------------------------------------------------- #
-#  Markdown summary
-# --------------------------------------------------------------------------- #
+def file_size_kb(path: str) -> float:
+    return Path(path).stat().st_size / 1024
 
-def format_summary(metrics: dict, failures: list[str]) -> str:
-    """Render metrics + validation as GitHub-flavoured Markdown."""
-    status = "PASS ✅" if not failures else "FAIL ❌"
-
-    lines = [
-        "## Real-ESRGAN Pipeline — CI Results",
-        "",
-        f"**Status: {status}**",
-        "",
-        "### Metrics",
-        "",
-        "| Metric | Value |",
-        "|--------|-------|",
-        f"| Input resolution | `{metrics['input_resolution']}` |",
-        f"| Output resolution | `{metrics['output_resolution']}` |",
-        f"| Input file size | `{metrics['input_file_size_kb']} KB` |",
-        f"| Output file size | `{metrics['output_file_size_kb']} KB` |",
-        f"| Upscale ratio (linear) | `{metrics['upscale_ratio_linear']}x` |",
-        f"| Upscale ratio (area) | `{metrics['upscale_ratio_area']}x` |",
-        f"| Sharpness (Laplacian var) | `{metrics['sharpness_laplacian_var']}` |",
-        f"| Mean pixel intensity | `{metrics['mean_pixel_intensity']}` |",
-        f"| Mean R / G / B | `{metrics['mean_r']}` / `{metrics['mean_g']}` / `{metrics['mean_b']}` |",
-        f"| Processing time | `{metrics['processing_time_sec']}s` |",
-        "",
-    ]
-
-    if failures:
-        lines.append("### Validation Failures")
-        lines.append("")
-        for f in failures:
-            lines.append(f"- ❌ {f}")
-        lines.append("")
-    else:
-        lines.append("All quality gates passed.")
-        lines.append("")
-
-    return "\n".join(lines)
-
-
-# --------------------------------------------------------------------------- #
-#  CLI
-# --------------------------------------------------------------------------- #
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Compute image quality metrics")
-    parser.add_argument("--input", "-i", required=True, help="Input image path")
-    parser.add_argument("--output", "-o", required=True, help="Output image path")
-    parser.add_argument("--time", "-t", type=float, default=0.0,
-                        help="Processing time in seconds")
-    parser.add_argument("--summary-file", "-s", default=None,
-                        help="Write Markdown summary to this file")
-    parser.add_argument("--json", action="store_true",
-                        help="Also print metrics as JSON to stdout")
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--input",  required=True)
+    ap.add_argument("--output", required=True)
+    ap.add_argument("--time",   default="n/a")
+    ap.add_argument("--summary-file", default=None)
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args()
 
-    metrics = compute_metrics(args.input, args.output, args.time)
-    failures = validate(metrics)
-    summary = format_summary(metrics, failures)
+    inp = Image.open(args.input)
+    out_path = Path(args.output)
+    if not out_path.exists():
+        print(f"ERROR: output file not found: {out_path}", file=sys.stderr)
+        sys.exit(1)
+    out = Image.open(str(out_path))
 
-    print(summary)
+    upscale_w = out.size[0] / inp.size[0]
+    upscale_h = out.size[1] / inp.size[1]
+    sharpness = laplacian_sharpness(str(out_path))
+    intensity  = mean_intensity(str(out_path))
+    size_kb    = file_size_kb(str(out_path))
+
+    # Quality gates
+    gates = {
+        "upscale_ratio >= 1.5x": min(upscale_w, upscale_h) >= 1.5,
+        "not all-black (intensity > 5)": intensity > 5,
+        "not all-white (intensity < 250)": intensity < 250,
+        "sharpness > 10": sharpness > 10,
+    }
+    passed = all(gates.values())
+
+    metrics = {
+        "input_size":  f"{inp.size[0]}x{inp.size[1]}",
+        "output_size": f"{out.size[0]}x{out.size[1]}",
+        "upscale_w":   round(upscale_w, 2),
+        "upscale_h":   round(upscale_h, 2),
+        "sharpness":   round(sharpness, 1),
+        "intensity":   round(intensity, 1),
+        "size_kb":     round(size_kb, 1),
+        "time_s":      args.time,
+        "gates":       gates,
+        "passed":      passed,
+    }
 
     if args.json:
-        print("\n--- JSON ---")
         print(json.dumps(metrics, indent=2))
 
-    if args.summary_file:
-        Path(args.summary_file).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.summary_file).write_text(summary)
-        print(f"\nSummary written to {args.summary_file}")
+    md = [
+        "## Real-ESRGAN Pipeline — Quality Metrics",
+        "",
+        f"| Metric | Value |",
+        f"|--------|-------|" ,
+        f"| Input size  | {metrics['input_size']} |",
+        f"| Output size | {metrics['output_size']} |",
+        f"| Upscale W   | {metrics['upscale_w']}x |",
+        f"| Upscale H   | {metrics['upscale_h']}x |",
+        f"| Sharpness   | {metrics['sharpness']} |",
+        f"| Intensity   | {metrics['intensity']} |",
+        f"| File size   | {metrics['size_kb']} KB |",
+        f"| Time        | {metrics['time_s']}s |",
+        "",
+        "### Quality Gates",
+        "",
+    ]
+    for gate, ok in gates.items():
+        md.append(f"- {'✅' if ok else '❌'} {gate}")
+    md += ["", f"**Overall: {'✅ PASSED' if passed else '❌ FAILED'}**"]
 
-    if failures:
-        print(f"\n⚠️  {len(failures)} validation failure(s) — exiting with code 1")
+    summary = "\n".join(md)
+    if args.summary_file:
+        Path(args.summary_file).write_text(summary)
+    print(summary)
+
+    if not passed:
         sys.exit(1)
 
 

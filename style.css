@@ -1,0 +1,11 @@
+#card_enhancer_enable {
+    font-weight: bold;
+    color: var(--primary-500, #1677ff);
+}
+
+#card_enhancer_status {
+    font-family: monospace;
+    font-size: 0.85em;
+    color: var(--body-text-color-subdued, #888);
+    padding: 4px 0;
+}

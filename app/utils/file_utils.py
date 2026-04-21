@@ -6,6 +6,8 @@ import zipfile
 from pathlib import Path
 from typing import List
 
+from app.core.constants import MAX_UNZIPPED_BYTES
+
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif"}
 
 
@@ -13,7 +15,7 @@ def safe_zip_extract(
     zip_bytes: bytes,
     extract_dir: Path,
     max_files: int = 3000,
-    max_unpacked: int = 5 * 1024 * 1024 * 1024,
+    max_unpacked: int = MAX_UNZIPPED_BYTES,
 ) -> List[Path]:
     extract_dir.mkdir(parents=True, exist_ok=True)
     extracted: List[Path] = []

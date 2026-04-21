@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class JobStatusEnum(str, Enum):
@@ -69,3 +69,30 @@ class SystemStatus(BaseModel):
     active_jobs: int
     completed_jobs: int
     storage_used_gb: float
+
+
+# ── YOLO detection ──────────────────────────────────────────────────────────
+
+class BoundingBox(BaseModel):
+    """Normalized bounding box; all coordinates are in [0, 1]."""
+    x1: float = Field(ge=0.0, le=1.0)
+    y1: float = Field(ge=0.0, le=1.0)
+    x2: float = Field(ge=0.0, le=1.0)
+    y2: float = Field(ge=0.0, le=1.0)
+
+
+class DetectionItem(BaseModel):
+    label: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    bbox: BoundingBox
+
+
+class DetectResponse(BaseModel):
+    detections: List[DetectionItem]
+    count: int
+    image_width: int
+    image_height: int
+    inference_time_ms: float
+    model: str
+    model_available: bool
+    confidence_threshold: float

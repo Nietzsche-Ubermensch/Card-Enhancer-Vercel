@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     REPLICATE_API_TOKEN: str = ""
     UPSCALE_BACKEND: str = "realesrgan"
 
+    # --- YOLO detection ---
+    YOLO_MODEL_PATH: str = "models/card_detector_obb.pt"
+    YOLO_CONFIDENCE: float = 0.4
+    YOLO_DEVICE: str = "cpu"
+
     # --- CORS ---
     CORS_ORIGINS: List[str] = Field(default_factory=lambda: ["*"])
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Dict
 
 import cv2
@@ -7,6 +8,12 @@ import numpy as np
 from PIL import Image, ImageEnhance, ImageOps
 
 from app.utils.logger import log
+
+
+@dataclass
+class BackendInfo:
+    name: str
+    min_vram_gb: float
 
 
 class OpenCVBackend:
@@ -22,6 +29,16 @@ class OpenCVBackend:
     # ------------------------------------------------------------------ #
     #  Public API                                                          #
     # ------------------------------------------------------------------ #
+
+    def is_available(self) -> bool:
+        try:
+            import cv2 as _cv2  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+    def info(self) -> BackendInfo:
+        return BackendInfo(name="OpenCV (CPU)", min_vram_gb=0)
 
     def enhance(self, input_path: str, output_path: str, opts: Dict[str, Any]) -> str:
         factor      = int(opts.get("upscale_factor", 2))

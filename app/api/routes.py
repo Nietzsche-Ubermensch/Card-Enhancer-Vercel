@@ -1,20 +1,24 @@
 from __future__ import annotations
 
+import asyncio
+import io
 import json
 import uuid
 from pathlib import Path
 from typing import Optional
 
 from fastapi import (
-    APIRouter, File, Form, HTTPException,
+    APIRouter, File, Form, HTTPException, Query,
     UploadFile, WebSocket, WebSocketDisconnect,
 )
 from fastapi.responses import FileResponse, HTMLResponse
+from PIL import Image
 
 from app.core.config import settings
 from app.db.database import AsyncSessionLocal
 from app.models.enums import JobStatus
 from app.models.schemas import (
+    BoundingBox, DetectResponse, DetectionItem,
     ImageResult, JobStatusEnum, JobStatusResponse,
     PresetInfo, PresetsResponse, SystemStatus, UploadResponse,
 )
@@ -27,6 +31,8 @@ from app.utils.logger import log
 from app.workers.batch_worker import register_ws, unregister_ws
 
 router = APIRouter()
+
+_SUPPORTED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/tiff"}
 
 
 # ------------------------------------------------------------------ #
@@ -205,6 +211,81 @@ async def cancel_job(job_id: str):
                          message="Cancelled by user")
         cleanup_directory(Path(settings.TEMP_DIR) / job_id)
         return {"ok": True, "job_id": job_id}
+
+
+# ------------------------------------------------------------------ #
+#  YOLO detection                                                      #
+# ------------------------------------------------------------------ #
+
+@router.post("/v1/detect", response_model=DetectResponse)
+async def detect_objects(
+    image: UploadFile = File(..., description="Image file to run detection on"),
+    confidence: Optional[float] = Query(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Confidence threshold override (defaults to YOLO_CONFIDENCE setting)",
+    ),
+):
+    """
+    Run YOLO object detection on a single image.
+
+    Returns normalized bounding boxes (coordinates in [0, 1]) for each detected
+    object along with class labels, confidence scores, and timing information.
+
+    When the YOLO model is unavailable (weights missing or ultralytics not
+    installed), the endpoint still returns 200 with an empty detections list
+    and model_available=false rather than 503, so callers can degrade gracefully.
+    """
+    content_type = image.content_type or ""
+    if content_type not in _SUPPORTED_IMAGE_TYPES and not content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported media type {content_type!r}. Expected an image.",
+        )
+
+    data = await image.read()
+    if len(data) > settings.MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Image exceeds {settings.MAX_FILE_SIZE // (1024 * 1024)} MB limit",
+        )
+
+    try:
+        pil_img = Image.open(io.BytesIO(data)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Cannot decode image: {exc}")
+
+    from app.services.yolo_detector import get_detector
+    det = get_detector()
+    threshold = confidence if confidence is not None else settings.YOLO_CONFIDENCE
+
+    # Run blocking YOLO inference on a thread-pool worker so the event loop is free
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(None, det.detect, pil_img, threshold)
+
+    return DetectResponse(
+        detections=[
+            DetectionItem(
+                label=d.label,
+                confidence=d.confidence,
+                bbox=BoundingBox(
+                    x1=d.bbox.x1,
+                    y1=d.bbox.y1,
+                    x2=d.bbox.x2,
+                    y2=d.bbox.y2,
+                ),
+            )
+            for d in result.detections
+        ],
+        count=result.count,
+        image_width=result.image_width,
+        image_height=result.image_height,
+        inference_time_ms=result.inference_time_ms,
+        model=result.model_name,
+        model_available=result.model_available,
+        confidence_threshold=threshold,
+    )
 
 
 # ------------------------------------------------------------------ #

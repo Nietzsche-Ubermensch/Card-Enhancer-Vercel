@@ -4,12 +4,26 @@ services:
   card-enhancer:
     build: .
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:8000"
     volumes:
-      - ./uploads:/app/uploads
-      - ./outputs:/app/outputs
-      - ./models:/app/models
+      - uploads:/app/uploads
+      - outputs:/app/outputs
+      - models:/app/models
       - ./jobs.db:/app/jobs.db
     env_file:
       - .env
+    environment:
+      # Override DATABASE_URL so it points to the absolute container path
+      DATABASE_URL: "sqlite+aiosqlite:////app/jobs.db"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/system"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  uploads:
+  outputs:
+  models:

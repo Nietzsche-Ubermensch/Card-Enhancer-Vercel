@@ -10,8 +10,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-os.environ.setdefault("UPSCALER_BACKEND", "opencv")
-os.environ.setdefault("FALLBACK_TO_CPU", "true")
+os.environ.setdefault("UPSCALE_BACKEND", "opencv")
 
 
 @pytest.fixture()

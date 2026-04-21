@@ -19,11 +19,12 @@ from app.services.upscalers import get_backend_name
 from app.utils.file_utils import cleanup_directory, format_bytes, safe_zip_extract
 from app.utils.logger import log
 
-enhancer     = EnhancementService()
-_executor:   Optional[ThreadPoolExecutor]  = None
-_poll_thread: Optional[threading.Thread]   = None
-_stop_event  = threading.Event()
-_ws_registry: Dict[str, Callable]         = {}
+enhancer      = EnhancementService()
+_executor:    Optional[ThreadPoolExecutor] = None
+_poll_thread: Optional[threading.Thread]  = None
+_stop_event   = threading.Event()
+_ws_registry: Dict[str, Callable]        = {}
+_ws_lock      = threading.Lock()
 
 
 # ------------------------------------------------------------------ #
@@ -31,22 +32,25 @@ _ws_registry: Dict[str, Callable]         = {}
 # ------------------------------------------------------------------ #
 
 def register_ws(job_id: str, cb: Callable) -> None:
-    _ws_registry[job_id] = cb
+    with _ws_lock:
+        _ws_registry[job_id] = cb
 
 
 def unregister_ws(job_id: str) -> None:
-    _ws_registry.pop(job_id, None)
+    with _ws_lock:
+        _ws_registry.pop(job_id, None)
 
 
 def _notify(job_id: str, payload: Dict[str, Any]) -> None:
-    cb = _ws_registry.get(job_id)
+    with _ws_lock:
+        cb = _ws_registry.get(job_id)
     if not cb:
         return
     try:
         loop = asyncio.get_running_loop()
         asyncio.run_coroutine_threadsafe(cb(payload), loop)
     except RuntimeError:
-        pass
+        log.warning(f"No running event loop for WebSocket notification on job {job_id}")
 
 
 # ------------------------------------------------------------------ #
@@ -54,6 +58,7 @@ def _notify(job_id: str, payload: Dict[str, Any]) -> None:
 # ------------------------------------------------------------------ #
 
 def _process_job(job_id: str) -> None:
+    work_dir = Path(settings.TEMP_DIR) / job_id
 
     async def _run() -> None:
         async with AsyncSessionLocal() as session:
@@ -67,9 +72,8 @@ def _process_job(job_id: str) -> None:
                                  message="ZIP file not found")
                 return
 
-            opts     = dict(job.settings or {})
-            work_dir = Path(settings.TEMP_DIR) / job_id
-            t_start  = time.time()
+            opts    = dict(job.settings or {})
+            t_start = time.time()
             backend  = get_backend_name()
 
             await update_job(session, job, status=JobStatus.ANALYZING,
@@ -104,7 +108,6 @@ def _process_job(job_id: str) -> None:
                 if _stop_event.is_set():
                     await update_job(session, job, status=JobStatus.CANCELLED,
                                      message="Cancelled by shutdown")
-                    cleanup_directory(work_dir)
                     return
 
                 output_dir = Path(settings.OUTPUT_DIR) / job_id
@@ -183,13 +186,14 @@ def _process_job(job_id: str) -> None:
                 "message":          done_msg,
                 "backend":          backend,
             })
-            cleanup_directory(work_dir)
             log.info(f"Job {job_id}: {done_msg}")
 
     try:
         asyncio.run(_run())
     except Exception as exc:
         log.error(f"Job {job_id} crashed: {exc}")
+    finally:
+        cleanup_directory(work_dir)
 
 
 # ------------------------------------------------------------------ #

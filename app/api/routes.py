@@ -23,6 +23,7 @@ from app.services.job_service import (
 )
 from app.services.upscalers import get_backend_name
 from app.utils.file_utils import cleanup_directory
+from app.utils.logger import log
 from app.workers.batch_worker import register_ws, unregister_ws
 
 router = APIRouter()
@@ -87,7 +88,11 @@ async def batch_upload(
         opts = dict(settings.PRESETS[preset])
     if settings_json:
         try:
-            opts.update(json.loads(settings_json))
+            user_opts = json.loads(settings_json)
+            if not isinstance(user_opts, dict):
+                raise HTTPException(400, "settings_json must be a JSON object")
+            # Strip internal keys (prefixed with _) that callers must not override
+            opts.update({k: v for k, v in user_opts.items() if not k.startswith("_")})
         except json.JSONDecodeError:
             raise HTTPException(400, "Invalid settings_json")
 
@@ -158,7 +163,10 @@ async def list_results(job_id: str):
 
 @router.get("/v1/image/{job_id}/{filename}")
 async def serve_enhanced(job_id: str, filename: str):
-    p = Path(settings.OUTPUT_DIR) / job_id / filename
+    output_root = Path(settings.OUTPUT_DIR).resolve()
+    p = (output_root / job_id / filename).resolve()
+    if not str(p).startswith(str(output_root) + "/"):
+        raise HTTPException(400, "Invalid path")
     if not p.exists():
         raise HTTPException(404, "Image not found")
     return FileResponse(str(p))
@@ -166,13 +174,16 @@ async def serve_enhanced(job_id: str, filename: str):
 
 @router.get("/v1/original/{job_id}/{filename}")
 async def serve_original(job_id: str, filename: str):
+    temp_root = Path(settings.TEMP_DIR).resolve()
     async with AsyncSessionLocal() as session:
         job = await get_job(session, job_id)
         if not job:
             raise HTTPException(404, "Job not found")
         for r in (job.data or {}).get("results", []):
             if r.get("filename") == filename:
-                orig = Path(r.get("original_path", ""))
+                orig = Path(r.get("original_path", "")).resolve()
+                if not str(orig).startswith(str(temp_root) + "/"):
+                    raise HTTPException(400, "Invalid path")
                 if orig.exists():
                     return FileResponse(str(orig))
     raise HTTPException(404, "Original not found")
@@ -207,8 +218,10 @@ async def ws_progress(websocket: WebSocket, job_id: str):
     async def push(payload: dict):
         try:
             await websocket.send_json(payload)
-        except Exception:
-            pass
+        except WebSocketDisconnect:
+            unregister_ws(job_id)
+        except Exception as exc:
+            log.warning(f"WebSocket send failed for job {job_id}: {exc}")
 
     register_ws(job_id, push)
 
@@ -228,8 +241,15 @@ async def ws_progress(websocket: WebSocket, job_id: str):
                 })
 
         while True:
-            raw  = await websocket.receive_text()
-            data = json.loads(raw)
+            raw = await websocket.receive_text()
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                await websocket.send_json({"error": "Invalid JSON"})
+                continue
+            if not isinstance(data, dict):
+                await websocket.send_json({"error": "Expected JSON object"})
+                continue
             if data.get("action") == "cancel":
                 async with AsyncSessionLocal() as session:
                     job = await get_job(session, job_id)

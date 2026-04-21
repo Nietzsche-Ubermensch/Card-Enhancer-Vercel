@@ -19,10 +19,12 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from app.core.constants import MIN_CROP_HEIGHT_PX, MIN_CROP_WIDTH_PX, YOLO_CONFIDENCE_THRESHOLD
+
 log = logging.getLogger("card_enhancer")
 
 _WEIGHTS = Path("models/card_detector_obb.pt")
-_CONFIDENCE = 0.55
+_CONFIDENCE = YOLO_CONFIDENCE_THRESHOLD
 _model = None
 _load_lock = threading.Lock()
 
@@ -102,8 +104,8 @@ def detect_and_crop_detailed(img: Image.Image) -> DetectionResult:
     width_bot  = float(np.linalg.norm(pts[2] - pts[3]))
     height_lft = float(np.linalg.norm(pts[3] - pts[0]))
     height_rgt = float(np.linalg.norm(pts[2] - pts[1]))
-    out_w = max(int(max(width_top, width_bot)), 100)
-    out_h = max(int(max(height_lft, height_rgt)), 140)
+    out_w = max(int(max(width_top, width_bot)), MIN_CROP_WIDTH_PX)
+    out_h = max(int(max(height_lft, height_rgt)), MIN_CROP_HEIGHT_PX)
 
     dst = np.array(
         [[0, 0], [out_w - 1, 0], [out_w - 1, out_h - 1], [0, out_h - 1]],

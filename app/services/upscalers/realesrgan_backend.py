@@ -11,6 +11,16 @@ import numpy as np
 from PIL import Image
 
 from app.core.config import settings
+from app.core.constants import (
+    CARD_WARP_HEIGHT,
+    CARD_WARP_WIDTH,
+    CONTOUR_APPROX_EPSILON,
+    MIN_CONTOUR_AREA_RATIO,
+    REPLICATE_OUTPUT_FETCH_TIMEOUT_SECONDS,
+    SWINIR_MAX_RETRIES,
+    SWINIR_RETRY_BASE_WAIT_SECONDS,
+    SWINIR_TIMEOUT_SECONDS,
+)
 from app.utils.logger import log
 
 
@@ -99,10 +109,10 @@ class RealESRGANBackend:
             return img
         largest  = max(contours, key=cv2.contourArea)
         img_area = img.width * img.height
-        if cv2.contourArea(largest) < img_area * 0.20:
+        if cv2.contourArea(largest) < img_area * MIN_CONTOUR_AREA_RATIO:
             return img
         peri   = cv2.arcLength(largest, True)
-        approx = cv2.approxPolyDP(largest, 0.02 * peri, True)
+        approx = cv2.approxPolyDP(largest, CONTOUR_APPROX_EPSILON * peri, True)
         if len(approx) == 4:
             pts     = approx.reshape(4, 2).astype("float32")
             s       = pts.sum(axis=1)
@@ -113,9 +123,13 @@ class RealESRGANBackend:
                 pts[np.argmax(s)],
                 pts[np.argmax(diff)],
             ], dtype="float32")
-            dst    = np.array([[0, 0], [499, 0], [499, 699], [0, 699]], dtype="float32")
+            dst    = np.array(
+                [[0, 0], [CARD_WARP_WIDTH - 1, 0],
+                 [CARD_WARP_WIDTH - 1, CARD_WARP_HEIGHT - 1], [0, CARD_WARP_HEIGHT - 1]],
+                dtype="float32",
+            )
             M      = cv2.getPerspectiveTransform(ordered, dst)
-            warped = cv2.warpPerspective(cv_img, M, (500, 700))
+            warped = cv2.warpPerspective(cv_img, M, (CARD_WARP_WIDTH, CARD_WARP_HEIGHT))
             return Image.fromarray(cv2.cvtColor(warped, cv2.COLOR_BGR2RGB))
         x, y, w, h = cv2.boundingRect(largest)
         return img.crop((x, y, x + w, y + h))
@@ -152,10 +166,10 @@ class RealESRGANBackend:
             first = next(iter(output))
             if hasattr(first, "read"):
                 return Image.open(first).convert("RGB")
-            resp = httpx.get(str(first), timeout=180)
+            resp = httpx.get(str(first), timeout=REPLICATE_OUTPUT_FETCH_TIMEOUT_SECONDS)
             resp.raise_for_status()
             return Image.open(io.BytesIO(resp.content)).convert("RGB")
-        resp = httpx.get(str(output), timeout=180)
+        resp = httpx.get(str(output), timeout=REPLICATE_OUTPUT_FETCH_TIMEOUT_SECONDS)
         resp.raise_for_status()
         return Image.open(io.BytesIO(resp.content)).convert("RGB")
 
@@ -200,7 +214,7 @@ class RealESRGANBackend:
         raw_bytes = buf.getvalue()
 
         last_exc: Exception | None = None
-        for attempt in range(3):
+        for attempt in range(SWINIR_MAX_RETRIES):
             try:
                 resp = httpx.post(
                     "https://api-inference.huggingface.co/models/caidas/swin2SR-classical-sr-x4-64",
@@ -209,11 +223,14 @@ class RealESRGANBackend:
                         "Content-Type":  "image/png",
                     },
                     content=raw_bytes,
-                    timeout=240,
+                    timeout=SWINIR_TIMEOUT_SECONDS,
                 )
                 if resp.status_code == 503:
-                    wait = 20 * (attempt + 1)
-                    log.info(f"[SwinIR] 503 cold start, retrying in {wait}s (attempt {attempt + 1}/3)")
+                    wait = SWINIR_RETRY_BASE_WAIT_SECONDS * (attempt + 1)
+                    log.info(
+                        f"[SwinIR] 503 cold start, retrying in {wait}s "
+                        f"(attempt {attempt + 1}/{SWINIR_MAX_RETRIES})"
+                    )
                     time.sleep(wait)
                     continue
                 if resp.status_code != 200:
@@ -221,11 +238,14 @@ class RealESRGANBackend:
                 return Image.open(io.BytesIO(resp.content)).convert("RGB")
             except (httpx.RemoteProtocolError, httpx.ReadTimeout) as exc:
                 last_exc = exc
-                wait = 20 * (attempt + 1)
-                log.info(f"[SwinIR] Connection error, retrying in {wait}s (attempt {attempt + 1}/3)")
+                wait = SWINIR_RETRY_BASE_WAIT_SECONDS * (attempt + 1)
+                log.info(
+                    f"[SwinIR] Connection error, retrying in {wait}s "
+                    f"(attempt {attempt + 1}/{SWINIR_MAX_RETRIES})"
+                )
                 time.sleep(wait)
 
-        raise RuntimeError(f"SwinIR failed after 3 attempts: {last_exc}")
+        raise RuntimeError(f"SwinIR failed after {SWINIR_MAX_RETRIES} attempts: {last_exc}")
 
     # ------------------------------------------------------------------ #
     #  Stage 3 — Real-ESRGAN via Replicate                                #

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     HF_API_TOKEN: str = ""
     REPLICATE_API_TOKEN: str = ""
     UPSCALE_BACKEND: str = "realesrgan"
+
+    # --- CORS ---
+    CORS_ORIGINS: List[str] = Field(default_factory=lambda: ["*"])
 
     PRESETS: Dict[str, Dict] = Field(default_factory=lambda: {
         "mint_card": {

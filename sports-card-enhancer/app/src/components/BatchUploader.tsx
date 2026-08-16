@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, X, Image as ImageIcon, FileArchive, Check, Archive, Cpu, Sparkles } from 'lucide-react';
+import { Upload, X, Image as ImageIcon, FileArchive, Archive, Cpu, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -75,7 +75,6 @@ export function BatchUploader({ onFilesSelected }: BatchUploaderProps) {
     if (validFiles.length > 0) {
       setFiles(prev => [...prev, ...validFiles]);
       const zipCount = validFiles.filter(f => isZipFile(f)).length;
-      const imageCount = validFiles.length - zipCount;
       let message = `Added ${validFiles.length} file(s)`;
       if (zipCount > 0) {
         message += ` (${zipCount} ZIP archive${zipCount > 1 ? 's' : ''})`;

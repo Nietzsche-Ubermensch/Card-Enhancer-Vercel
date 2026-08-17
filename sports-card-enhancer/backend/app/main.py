@@ -19,7 +19,8 @@ from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.models.schemas import (
     UploadResponse, EnhancementResponse, JobStatusResponse,
-    DownloadResponse, EnhancementSettings, JobStatus, WebSocketProgressMessage,
+    DownloadResponse, EnhancementSettings, JobStatus, CardState,
+    WebSocketProgressMessage,
     ProcessRequest, ExportRequest, ExportResponse, BatchProgress,
     ProviderStatusResponse,
 )
@@ -635,6 +636,32 @@ async def retry_failed_cards(job_id: str, card_id: Optional[str] = None):
     if requeued == 0:
         return {"message": "No failed cards to retry", "requeued": 0}
     return {"message": f"Requeued {requeued} card(s)", "requeued": requeued}
+
+
+@app.post("/jobs/{job_id}/orientation")
+async def set_orientation_override(job_id: str, degrees: int):
+    """Manually override orientation for a job's cards and reprocess them.
+
+    `degrees` must be one of 0/90/180/270. Manual override always wins over
+    automatic detection.
+    """
+    job = await batch_processor.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if degrees % 360 not in (0, 90, 180, 270):
+        raise HTTPException(status_code=400, detail="degrees must be 0, 90, 180 or 270")
+
+    job.process_options["manual_orientation"] = degrees % 360
+    requeued = 0
+    for card in job.cards:
+        card.state = CardState.RETRYING
+        card.error = None
+        card.retry_count += 1
+        await batch_processor.queue.put((job_id, card.id))
+        requeued += 1
+    job.status = JobStatus.PROCESSING
+    job.updated_at = datetime.now()
+    return {"message": f"Reprocessing {requeued} card(s) with orientation {degrees}", "requeued": requeued}
 
 
 @app.post("/jobs/{job_id}/export", response_model=ExportResponse)

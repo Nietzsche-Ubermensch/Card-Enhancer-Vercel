@@ -1,6 +1,15 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// In production, set VITE_API_URL to the deployed backend origin.
+// When unset and the app is served by the backend itself (same-origin
+// deployment), fall back to the current origin instead of localhost.
+const API_BASE_URL: string =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.DEV ? 'http://localhost:8000' : window.location.origin);
+
+// Resolve a backend-relative path (e.g. "/outputs/x.zip") against the API base.
+export const apiUrl = (path: string): string =>
+  new URL(path, `${API_BASE_URL}/`).toString();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -115,7 +124,13 @@ export const apiService = {
   // Get download URL
   async getDownloadUrl(jobId: string): Promise<DownloadResponse> {
     const response = await api.get<DownloadResponse>(`/download/${jobId}`);
-    return response.data;
+    const data = response.data;
+    // The backend returns a relative path; resolve it against the API base
+    // so downloads work when frontend and backend are on different origins.
+    if (data.download_url && !/^https?:\/\//i.test(data.download_url)) {
+      data.download_url = apiUrl(data.download_url);
+    }
+    return data;
   },
 
   // Download file directly

@@ -14,6 +14,7 @@ from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
 import json
 import asyncio
+from contextlib import asynccontextmanager
 
 from app.core.config import settings
 from app.models.schemas import (
@@ -75,7 +76,18 @@ def extract_zip_images(zip_content: bytes, extract_dir: Path) -> List[str]:
     return extracted_paths
 
 # Create FastAPI app
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start/stop the batch processor with the application lifecycle."""
+    await batch_processor.start()
+    try:
+        yield
+    finally:
+        await batch_processor.stop()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="AI-powered sports card image enhancement API",
@@ -84,9 +96,11 @@ app = FastAPI(
 )
 
 # CORS middleware
+# Configure allowed origins via the CORS_ORIGINS environment variable
+# (comma-separated). Defaults to "*" for local development.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure for production
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -98,18 +112,6 @@ app.mount("/outputs", StaticFiles(directory=str(settings.OUTPUT_DIR)), name="out
 
 # Store active WebSocket connections
 active_connections: dict = {}
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Start the batch processor on startup."""
-    await batch_processor.start()
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Stop the batch processor on shutdown."""
-    await batch_processor.stop()
 
 
 @app.get("/")
@@ -549,3 +551,13 @@ async def health_check():
         "timestamp": datetime.now().isoformat(),
         "version": settings.APP_VERSION
     }
+
+
+# Serve the built frontend (Vite "dist" output) when it is co-located with the
+# backend (single-service deployment, e.g. the root Dockerfile). Mounted LAST so
+# that API routes take precedence over the static catch-all. When the directory
+# is absent the API runs standalone and the frontend is expected to be hosted
+# separately with VITE_API_URL pointing at this service.
+STATIC_DIR = Path(os.environ.get("STATIC_DIR", "./static"))
+if STATIC_DIR.is_dir() and (STATIC_DIR / "index.html").exists():
+    app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="frontend")

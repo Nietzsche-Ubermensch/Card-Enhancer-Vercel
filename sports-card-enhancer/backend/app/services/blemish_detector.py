@@ -70,8 +70,10 @@ class BlemishDetector:
                                 maxLineGap=10)
         
         if lines is not None:
-            for line in lines:
-                x1, y1, x2, y2 = line[0]
+            # HoughLinesP may return shape (N, 1, 4) or (N, 4) depending on the
+            # OpenCV build; normalize to a flat (N, 4) array.
+            lines = np.asarray(lines).reshape(-1, 4)
+            for x1, y1, x2, y2 in lines:
                 
                 # Calculate line properties
                 length = np.sqrt((x2-x1)**2 + (y2-y1)**2)
@@ -156,10 +158,13 @@ class BlemishDetector:
         # Calculate local standard deviation (texture measure)
         mean, std_dev = cv2.meanStdDev(blurred)
         
-        # Threshold high texture regions
-        _, high_texture = cv2.threshold(std_dev[0][0] + blurred, 
-                                        int(100 + self.sensitivity * 50), 255, 
-                                        cv2.THRESH_BINARY)
+        # Threshold high texture regions. The addition with the scalar std-dev
+        # promotes the array to float64, so clip and cast back to uint8 for
+        # findContours (which only accepts CV_8UC1 input).
+        _, high_texture = cv2.threshold(
+            np.uint8(np.clip(std_dev[0][0] + blurred, 0, 255)),
+            int(100 + self.sensitivity * 50), 255,
+            cv2.THRESH_BINARY)
         
         # Find contours
         contours, _ = cv2.findContours(high_texture, cv2.RETR_EXTERNAL, 

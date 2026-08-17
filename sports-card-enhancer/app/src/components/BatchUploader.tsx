@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, X, Image as ImageIcon, FileArchive, Check, Archive, Cpu, Sparkles } from 'lucide-react';
+import { Upload, X, Image as ImageIcon, FileArchive, Archive, Cpu, Sparkles, Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -21,6 +21,7 @@ export function BatchUploader({ onFilesSelected }: BatchUploaderProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [previews, setPreviews] = useState<Map<string, string>>(new Map());
   const inputRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
 
   const isZipFile = (file: File) => {
     return ALLOWED_ARCHIVE_TYPES.includes(file.type) || file.name.toLowerCase().endsWith('.zip');
@@ -75,7 +76,6 @@ export function BatchUploader({ onFilesSelected }: BatchUploaderProps) {
     if (validFiles.length > 0) {
       setFiles(prev => [...prev, ...validFiles]);
       const zipCount = validFiles.filter(f => isZipFile(f)).length;
-      const imageCount = validFiles.length - zipCount;
       let message = `Added ${validFiles.length} file(s)`;
       if (zipCount > 0) {
         message += ` (${zipCount} ZIP archive${zipCount > 1 ? 's' : ''})`;
@@ -167,7 +167,16 @@ export function BatchUploader({ onFilesSelected }: BatchUploaderProps) {
             ref={inputRef}
             type="file"
             multiple
-            accept=".jpg,.jpeg,.png,.tiff,.tif,.bmp,.webp,.zip"
+            accept=".jpg,.jpeg,.png,.tiff,.tif,.bmp,.webp,.zip,image/*"
+            onChange={(e) => handleFiles(e.target.files)}
+            className="hidden"
+          />
+          {/* Dedicated mobile/iPhone camera capture path */}
+          <input
+            ref={cameraRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
             onChange={(e) => handleFiles(e.target.files)}
             className="hidden"
           />
@@ -216,6 +225,23 @@ export function BatchUploader({ onFilesSelected }: BatchUploaderProps) {
             <p className="text-gray-500 mb-6 text-sm tracking-wide">
               or click anywhere to browse from your computer
             </p>
+
+            {/* Mobile / iPhone camera capture */}
+            <div className="mb-6">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  cameraRef.current?.click();
+                }}
+                className="border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/10 tracking-wider"
+              >
+                <Camera className="w-4 h-4 mr-2" />
+                TAKE PHOTO (MOBILE)
+              </Button>
+            </div>
             
             {/* Supported formats */}
             <div className="flex items-center justify-center gap-2 flex-wrap">

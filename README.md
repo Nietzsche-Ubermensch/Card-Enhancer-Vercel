@@ -1,3 +1,48 @@
+# Card Enhancer
+
+AI-powered sports card image enhancement: batch upload, blemish/scratch/dust
+detection and removal, color/contrast correction, sharpening, and optional
+Real-ESRGAN super-resolution upscaling.
+
+## Components
+
+| Component | Path | Tech |
+|-----------|------|------|
+| Frontend  | `sports-card-enhancer/app` | React 19 + Vite 7 + TypeScript |
+| Backend   | `sports-card-enhancer/backend` | FastAPI + Uvicorn |
+| DCPT research pipeline | `backend/dcpt_pipeline` | PyTorch GNN/TDA experiments |
+
+## Deployment
+
+The application is **platform-independent** — it deploys as a single Docker
+container with no reliance on any specific hosting provider. See
+[DEPLOYMENT.md](./DEPLOYMENT.md) for full instructions (Docker, Render,
+Fly.io, split frontend/backend hosting, environment variables).
+
+Quick start:
+
+```bash
+docker build -t card-enhancer .
+docker run -p 8000:8000 card-enhancer
+# open http://localhost:8000
+```
+
+## Local development
+
+```bash
+# Backend
+cd sports-card-enhancer/backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+
+# Frontend (another shell)
+cd sports-card-enhancer/app
+pnpm install
+pnpm dev
+```
+
+---
+
 # DCPT Training Pipeline
 
 ## Overview

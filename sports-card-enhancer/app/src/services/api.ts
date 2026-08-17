@@ -1,6 +1,15 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// In production, set VITE_API_URL to the deployed backend origin.
+// When unset and the app is served by the backend itself (same-origin
+// deployment), fall back to the current origin instead of localhost.
+const API_BASE_URL: string =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.DEV ? 'http://localhost:8000' : window.location.origin);
+
+// Resolve a backend-relative path (e.g. "/outputs/x.zip") against the API base.
+export const apiUrl = (path: string): string =>
+  new URL(path, `${API_BASE_URL}/`).toString();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -46,6 +55,32 @@ export interface EnhancementResponse {
   estimated_time_seconds: number;
 }
 
+export type CardState =
+  | 'queued' | 'validating' | 'processing' | 'completed'
+  | 'failed' | 'retrying' | 'cancelled';
+
+export interface CardImageInfo {
+  id: string;
+  filename: string;
+  original_path: string;
+  processed_path?: string;
+  status: JobStatus;
+  progress: number;
+  card_state: CardState;
+  detected_blemishes: any[];
+  error_message?: string;
+  orientation?: {
+    orientation_degrees: number;
+    orientation_confidence: number;
+    orientation_method: string;
+  } | null;
+  crop_confidence?: number | null;
+  metrics?: Record<string, number> | null;
+  artifacts?: Record<string, string | null> | null;
+  warnings?: string[];
+  retry_count?: number;
+}
+
 export interface JobStatusResponse {
   job_id: string;
   status: JobStatus;
@@ -53,18 +88,26 @@ export interface JobStatusResponse {
   total_images: number;
   completed_images: number;
   failed_images: number;
-  images: {
-    id: string;
-    filename: string;
-    original_path: string;
-    processed_path?: string;
-    status: JobStatus;
-    progress: number;
-    detected_blemishes: any[];
-    error_message?: string;
-  }[];
+  images: CardImageInfo[];
   created_at: string;
   updated_at: string;
+}
+
+export interface BatchProgress {
+  total: number;
+  queued: number;
+  running: number;
+  completed: number;
+  failed: number;
+  progress: number;
+}
+
+export interface ExportResponse {
+  job_id: string;
+  download_url: string;
+  file_count: number;
+  total_size_bytes: number;
+  manifest: Record<string, any>;
 }
 
 export interface DownloadResponse {
@@ -115,7 +158,13 @@ export const apiService = {
   // Get download URL
   async getDownloadUrl(jobId: string): Promise<DownloadResponse> {
     const response = await api.get<DownloadResponse>(`/download/${jobId}`);
-    return response.data;
+    const data = response.data;
+    // The backend returns a relative path; resolve it against the API base
+    // so downloads work when frontend and backend are on different origins.
+    if (data.download_url && !/^https?:\/\//i.test(data.download_url)) {
+      data.download_url = apiUrl(data.download_url);
+    }
+    return data;
   },
 
   // Download file directly
@@ -144,6 +193,66 @@ export const apiService = {
   // Delete job
   async deleteJob(jobId: string): Promise<void> {
     await api.delete(`/jobs/${jobId}`);
+  },
+
+  // Process cards through the core pipeline (orientation/crop/optimize).
+  async processCards(files: File[], options?: {
+    manual_orientation?: number | null;
+    output_format?: string;
+    output_quality?: number;
+    output_dpi?: number;
+    aggressive?: boolean;
+  }): Promise<EnhancementResponse> {
+    const formData = new FormData();
+    files.forEach(file => formData.append('files', file));
+    if (options) {
+      formData.append('process_json', JSON.stringify(options));
+    }
+    const response = await api.post<EnhancementResponse>('/process', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  // Retry failed cards in a job (all, or one card when cardId is given).
+  async retryFailed(jobId: string, cardId?: string): Promise<{ requeued: number }> {
+    const response = await api.post(`/jobs/${jobId}/retry`, null, {
+      params: cardId ? { card_id: cardId } : {},
+    });
+    return response.data;
+  },
+
+  // Export selected cards, or all completed when imageIds omitted.
+  async exportCards(jobId: string, imageIds?: string[]): Promise<ExportResponse> {
+    const response = await api.post<ExportResponse>(`/jobs/${jobId}/export`, {
+      image_ids: imageIds ?? null,
+      format: 'zip',
+    });
+    const data = response.data;
+    if (data.download_url && !/^https?:\/\//i.test(data.download_url)) {
+      data.download_url = apiUrl(data.download_url);
+    }
+    return data;
+  },
+
+  // Aggregate batch progress.
+  async getBatchProgress(jobId: string): Promise<BatchProgress> {
+    const response = await api.get<BatchProgress>(`/jobs/${jobId}/progress`);
+    return response.data;
+  },
+
+  // Which optional AI providers are configured (augmentation only).
+  async getProviderStatus(): Promise<{ any_configured: boolean; configured_providers: string[] }> {
+    const response = await api.get('/providers');
+    return response.data;
+  },
+
+  // Manually override orientation for a job's cards (0/90/180/270) and reprocess.
+  async setOrientation(jobId: string, degrees: 0 | 90 | 180 | 270): Promise<{ requeued: number }> {
+    const response = await api.post(`/jobs/${jobId}/orientation`, null, {
+      params: { degrees },
+    });
+    return response.data;
   },
 
   // Health check

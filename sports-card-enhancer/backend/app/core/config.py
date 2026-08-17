@@ -59,6 +59,17 @@ class Settings(BaseSettings):
     # Batch processing
     MAX_CONCURRENT_JOBS: int = 4
     JOB_TIMEOUT: int = 300  # 5 minutes
+
+    # CORS: comma-separated list of allowed origins.
+    # Set to your production frontend origin(s), e.g.
+    #   CORS_ORIGINS=https://card-enhancer.onrender.com
+    # Defaults to "*" (open) for local development only.
+    CORS_ORIGINS: str = "*"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parse CORS_ORIGINS into a list of allowed origins."""
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()] or ["*"]
     
     # External API tokens (optional)
     HUGGINGFACE_API_TOKEN: Optional[str] = None

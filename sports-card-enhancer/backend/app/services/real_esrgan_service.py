@@ -20,6 +20,7 @@ import os
 import torch
 import cv2
 import numpy as np
+from enum import Enum
 from typing import Optional, Tuple, List
 from pathlib import Path
 import logging
@@ -36,6 +37,21 @@ try:
 except ImportError:
     REAL_ESRGAN_AVAILABLE = False
     logger.warning("Real-ESRGAN dependencies not found. Enhancement will fallback to OpenCV Lanczos interpolation.")
+
+
+class SRModelType(str, Enum):
+    """Supported super-resolution model variants.
+
+    Values match the official Real-ESRGAN release weight names
+    (and the keys of RealESRGANService.MODEL_CONFIGS).
+    """
+
+    REAL_ESRGAN_X4PLUS = "RealESRGAN_x4plus"
+    REAL_ESRNET_X4PLUS = "RealESRNet_x4plus"
+    REAL_ESRGAN_X4PLUS_ANIME = "RealESRGAN_x4plus_anime_6B"
+    REAL_ESRGAN_X2PLUS = "RealESRGAN_x2plus"
+    ANIME_VIDEO_V3 = "realesr-animevideov3"
+    GENERAL_X4V3 = "realesr-general-x4v3"
 
 
 class RealESRGANService:
@@ -84,18 +100,48 @@ class RealESRGANService:
             "model_path": "RealESRGAN_x4plus_anime_6B.pth",
             "description": "Optimized for anime/illustration style cards"
         },
+        "RealESRGAN_x2plus": {
+            "type": "realesrgan",
+            "scale": 2,
+            "model_path": "RealESRGAN_x2plus.pth",
+            "description": "General purpose x2 upscaler (GAN-based)"
+        },
+        "realesr-animevideov3": {
+            "type": "realesrgan",
+            "scale": 4,
+            "model_path": "realesr-animevideov3.pth",
+            "description": "Lightweight anime-video model (fast, small)"
+        },
+        "realesr-general-x4v3": {
+            "type": "realesrgan",
+            "scale": 4,
+            "model_path": "realesr-general-x4v3.pth",
+            "description": "General x4 model with adjustable denoise strength"
+        },
     }
 
-    def __init__(self, weights_dir: str = "weights", tile_size: int = 0, tile_pad: int = 10):
+    def __init__(
+        self,
+        model_type: "SRModelType" = None,
+        weights_dir: str = "weights",
+        tile_size: int = 0,
+        tile_pad: int = 10,
+        use_half_precision: bool = False,
+    ):
         """
         Initialize the SR Service.
         
         Args:
+            model_type: Default super-resolution model variant (SRModelType).
+                        Falls back to REAL_ESRGAN_X4PLUS when omitted.
             weights_dir: Directory to store/download model weights.
             tile_size: Size of tiles for inference. If 0, processes whole image (risky for VRAM).
                        Recommended: 200-400 for free-tier GPUs.
             tile_pad: Padding overlap between tiles to avoid seam artifacts.
+            use_half_precision: Request FP16 inference (applied only when running on CUDA).
         """
+        self.model_type = model_type or SRModelType.REAL_ESRGAN_X4PLUS
+        self.use_half_precision = use_half_precision
         self.weights_dir = Path(weights_dir)
         self.weights_dir.mkdir(exist_ok=True)
         
@@ -116,7 +162,7 @@ class RealESRGANService:
             raise ValueError(f"Unknown model: {model_name}. Available: {list(self.MODEL_CONFIGS.keys())}")
         return self.weights_dir / self.MODEL_CONFIGS[model_name]["model_path"]
 
-    def load_model(self, model_name: str = "RealESRGAN_x4plus"):
+    def load_model(self, model_name: str = None):
         """
         Lazily load the specified super-resolution model.
         
@@ -136,6 +182,9 @@ class RealESRGANService:
             RuntimeError: If dependencies missing or model loading fails
             FileNotFoundError: If model weights not found
         """
+        if model_name is None:
+            model_name = self.model_type.value
+
         if model_name in self._model_cache:
             logger.debug(f"Model {model_name} already loaded from cache")
             return self._model_cache[model_name]
@@ -178,7 +227,7 @@ class RealESRGANService:
                     tile=self.tile_size,  # Critical for memory management
                     tile_pad=self.tile_pad,
                     pre_pad=0,
-                    half=True if self.device.type == 'cuda' else False,  # FP16 on GPU for speed
+                    half=self.use_half_precision and self.device.type == 'cuda',  # FP16 only on GPU
                     device=self.device,
                 )
             
@@ -190,7 +239,7 @@ class RealESRGANService:
             logger.error(f"Failed to load model {model_name}: {str(e)}")
             raise RuntimeError(f"Model loading failed: {e}")
 
-    def enhance_image(self, image: np.ndarray, model_name: str = "RealESRGAN_x4plus") -> np.ndarray:
+    def enhance_image(self, image: np.ndarray, model_name: str = "RealESRGAN_x4plus", outscale: float = None) -> np.ndarray:
         """
         Perform super-resolution on the input image.
         
@@ -206,9 +255,12 @@ class RealESRGANService:
         Args:
             image: Input BGR numpy array (from OpenCV). Shape: (H, W, 3)
             model_name: Key from MODEL_CONFIGS
+            outscale: Final scale factor for the output image. When omitted,
+                      the model's native scale is used.
             
         Returns:
-            Enhanced BGR numpy array, upscaled by model's scale factor (typically 4x)
+            Enhanced BGR numpy array, upscaled by outscale (or the model's
+            native scale factor, typically 4x)
             
         Raises:
             RuntimeError: If enhancement fails (OOM, invalid input, etc.)
@@ -216,14 +268,25 @@ class RealESRGANService:
         if not REAL_ESRGAN_AVAILABLE:
             logger.warning("Real-ESRGAN unavailable. Using OpenCV Lanczos fallback.")
             h, w = image.shape[:2]
-            return cv2.resize(image, (w * 4, h * 4), interpolation=cv2.INTER_LANCZOS4)
+            scale = outscale if outscale is not None else 4
+            new_w, new_h = int(w * scale), int(h * scale)
+            return cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
 
+        # The Real-ESRGAN runtime is installed, but the model weights may be
+        # unavailable (e.g. no network in the deployment environment). Only
+        # treat the SR path as usable if the weights can actually be loaded;
+        # otherwise surface an error so callers can apply their own fallback.
         try:
             upsampler = self.load_model(model_name)
+        except Exception:
+            raise
             
             # Inference: The RealESRGANer handles the heavy lifting, including tiling
             # Output is a tuple: (result_image, output_info_string)
-            result, _ = upsampler.enhance(image, outscale=upsampler.scale)
+            result, _ = upsampler.enhance(
+                image,
+                outscale=outscale if outscale is not None else upsampler.scale,
+            )
             
             return result
 
@@ -299,8 +362,10 @@ class RealESRGANService:
     def upscale_with_fallback(
         self, 
         image: np.ndarray, 
-        model_name: str = "RealESRGAN_x4plus",
-        fallback_scale: int = 4
+        model_name: str = None,
+        outscale: float = None,
+        fallback_scale: int = None,
+        fallback_method: str = 'lanczos'
     ) -> Tuple[np.ndarray, bool]:
         """
         Upscale with automatic fallback to traditional interpolation if SR fails.
@@ -311,16 +376,29 @@ class RealESRGANService:
         
         Args:
             image: Input BGR image
-            model_name: SR model to attempt
-            fallback_scale: Scale factor for fallback interpolation
+            model_name: SR model to attempt (defaults to the service's configured model)
+            outscale: Target scale factor (preferred over fallback_scale)
+            fallback_scale: Deprecated alias for outscale
+            fallback_method: Interpolation fallback ('lanczos' supported)
             
         Returns:
             Tuple of (upscaled_image, used_sr):
             - upscaled_image: Enhanced BGR image
             - used_sr: Boolean indicating if SR was successful (True) or fallback used (False)
         """
+        scale = outscale if outscale is not None else (fallback_scale if fallback_scale is not None else 4)
+
+        # When the Real-ESRGAN runtime is not installed, go straight to the
+        # interpolation fallback and report that SR was not used.
+        if not REAL_ESRGAN_AVAILABLE:
+            logger.warning("Real-ESRGAN unavailable. Using OpenCV Lanczos fallback.")
+            h, w = image.shape[:2]
+            new_w, new_h = int(w * scale), int(h * scale)
+            output = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
+            return output, False
+
         try:
-            output = self.enhance_image(image, model_name)
+            output = self.enhance_image(image, model_name or self.model_type.value, outscale=scale)
             return output, True
             
         except Exception as e:
@@ -328,7 +406,7 @@ class RealESRGANService:
             
             # Fallback to traditional interpolation
             h, w = image.shape[:2]
-            new_w, new_h = int(w * fallback_scale), int(h * fallback_scale)
+            new_w, new_h = int(w * scale), int(h * scale)
             
             output = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
             

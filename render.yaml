@@ -1,0 +1,16 @@
+# Render.com blueprint — deploys the whole stack (React frontend + FastAPI
+# backend) as a single Docker web service using the root Dockerfile.
+# See https://render.com/docs/deploy-to-render
+services:
+  - type: web
+    name: card-enhancer
+    runtime: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: USE_GPU
+        value: "false"
+      # Set to your frontend origin if you host the frontend separately:
+      # - key: CORS_ORIGINS
+      #   value: "https://your-frontend.example.com"

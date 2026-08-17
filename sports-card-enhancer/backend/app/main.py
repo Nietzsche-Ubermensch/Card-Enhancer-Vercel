@@ -14,13 +14,18 @@ from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
 import json
 import asyncio
+from contextlib import asynccontextmanager
 
 from app.core.config import settings
 from app.models.schemas import (
-    UploadResponse, EnhancementResponse, JobStatusResponse, 
-    DownloadResponse, EnhancementSettings, JobStatus, WebSocketProgressMessage
+    UploadResponse, EnhancementResponse, JobStatusResponse,
+    DownloadResponse, EnhancementSettings, JobStatus, CardState,
+    WebSocketProgressMessage,
+    ProcessRequest, ExportRequest, ExportResponse, BatchProgress,
+    ProviderStatusResponse,
 )
 from app.services.batch_processor import batch_processor, Job
+from app.services.providers import provider_manager, ProviderName
 from app.utils.image_utils import ImageProcessor
 
 
@@ -75,7 +80,18 @@ def extract_zip_images(zip_content: bytes, extract_dir: Path) -> List[str]:
     return extracted_paths
 
 # Create FastAPI app
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start/stop the batch processor with the application lifecycle."""
+    await batch_processor.start()
+    try:
+        yield
+    finally:
+        await batch_processor.stop()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="AI-powered sports card image enhancement API",
@@ -84,9 +100,11 @@ app = FastAPI(
 )
 
 # CORS middleware
+# Configure allowed origins via the CORS_ORIGINS environment variable
+# (comma-separated). Defaults to "*" for local development.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure for production
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -98,18 +116,6 @@ app.mount("/outputs", StaticFiles(directory=str(settings.OUTPUT_DIR)), name="out
 
 # Store active WebSocket connections
 active_connections: dict = {}
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Start the batch processor on startup."""
-    await batch_processor.start()
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Stop the batch processor on shutdown."""
-    await batch_processor.stop()
 
 
 @app.get("/")
@@ -281,7 +287,7 @@ async def enhance_images(
     if len(saved_paths) > settings.MAX_BATCH_SIZE:
         saved_paths = saved_paths[:settings.MAX_BATCH_SIZE]
     
-    # Submit batch job
+    # Submit batch job (runs the card pipeline: orientation -> crop -> optimize)
     job_id = await batch_processor.submit_job(saved_paths, enhancement_settings)
     
     # Estimate processing time (rough estimate: 5 seconds per image)
@@ -292,6 +298,78 @@ async def enhance_images(
         status=JobStatus.PENDING,
         message=f"Enhancement job submitted with {len(saved_paths)} images",
         estimated_time_seconds=estimated_time
+    )
+
+
+@app.post("/process", response_model=EnhancementResponse)
+async def process_cards(
+    files: List[UploadFile] = File(...),
+    process_json: Optional[str] = Form(None),
+    settings_json: Optional[str] = Form(None),
+):
+    """
+    Upload cards and run the core processing pipeline
+    (orientation -> crop -> perspective -> optimize). No AI provider required.
+
+    - **files**: Single or multiple image files, or ZIP archives containing images
+    - **process_json**: Optional JSON string with ProcessRequest options
+    - **settings_json**: Optional JSON string with enhancement settings
+    """
+    process_options: dict = {}
+    if process_json:
+        try:
+            process_options = ProcessRequest(**json.loads(process_json)).model_dump()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid process JSON: {e}")
+
+    enhancement_settings = EnhancementSettings()
+    if settings_json:
+        try:
+            enhancement_settings = EnhancementSettings(**json.loads(settings_json))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid settings JSON: {e}")
+
+    # Save uploaded files (images or ZIP archives)
+    saved_paths: List[str] = []
+    temp_dir = settings.TEMP_DIR / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    allowed_extensions = settings.ALLOWED_EXTENSIONS | {".zip"}
+
+    for file in files:
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in allowed_extensions:
+            continue
+        content = await file.read()
+        if ext == ".zip":
+            if len(content) > settings.MAX_FILE_SIZE * 10:
+                continue
+            try:
+                saved_paths.extend(extract_zip_images(content, temp_dir))
+            except Exception:
+                continue
+        else:
+            if len(content) > settings.MAX_FILE_SIZE:
+                continue
+            file_path = temp_dir / file.filename
+            with open(file_path, "wb") as f:
+                f.write(content)
+            saved_paths.append(str(file_path))
+
+    if not saved_paths:
+        raise HTTPException(status_code=400, detail="No valid files to process")
+
+    if len(saved_paths) > settings.MAX_BATCH_SIZE:
+        saved_paths = saved_paths[:settings.MAX_BATCH_SIZE]
+
+    job_id = await batch_processor.submit_job(
+        saved_paths, enhancement_settings, process_options=process_options
+    )
+
+    return EnhancementResponse(
+        job_id=job_id,
+        status=JobStatus.PENDING,
+        message=f"Processing job submitted with {len(saved_paths)} cards",
+        estimated_time_seconds=len(saved_paths) * 3,
     )
 
 
@@ -331,10 +409,12 @@ async def download_results(job_id: str):
     
     # Determine download file
     if len(job.image_paths) > 1:
-        # Return ZIP archive
-        zip_path = settings.OUTPUT_DIR / f"{job_id}.zip"
+        # Return ZIP archive (new export naming, fall back to legacy)
+        zip_path = settings.OUTPUT_DIR / f"{job_id}_export_all.zip"
+        if not zip_path.exists():
+            zip_path = settings.OUTPUT_DIR / f"{job_id}.zip"
         if zip_path.exists():
-            download_url = f"/outputs/{job_id}.zip"
+            download_url = f"/outputs/{zip_path.name}"
             total_size = zip_path.stat().st_size
             file_count = len(job.image_paths)
         else:
@@ -369,8 +449,10 @@ async def download_file(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found")
     
     if len(job.image_paths) > 1:
-        # Return ZIP
-        zip_path = settings.OUTPUT_DIR / f"{job_id}.zip"
+        # Return ZIP (new export naming, fall back to legacy)
+        zip_path = settings.OUTPUT_DIR / f"{job_id}_export_all.zip"
+        if not zip_path.exists():
+            zip_path = settings.OUTPUT_DIR / f"{job_id}.zip"
         if zip_path.exists():
             return FileResponse(
                 str(zip_path),
@@ -529,16 +611,103 @@ async def delete_job(job_id: str):
     if output_dir.exists():
         shutil.rmtree(output_dir)
     
-    # Remove ZIP if exists
-    zip_path = settings.OUTPUT_DIR / f"{job_id}.zip"
-    if zip_path.exists():
-        zip_path.unlink()
+    # Remove any associated ZIPs (legacy + export variants)
+    for candidate in settings.OUTPUT_DIR.glob(f"{job_id}*.zip"):
+        try:
+            candidate.unlink()
+        except OSError:
+            pass
     
     # Remove from processor
     if job_id in batch_processor.jobs:
         del batch_processor.jobs[job_id]
     
     return {"message": f"Job {job_id} deleted successfully"}
+
+
+@app.post("/jobs/{job_id}/retry")
+async def retry_failed_cards(job_id: str, card_id: Optional[str] = None):
+    """Retry failed cards in a job (all, or a single card when card_id given)."""
+    job = await batch_processor.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    requeued = await batch_processor.retry_failed(job_id, card_id=card_id)
+    if requeued == 0:
+        return {"message": "No failed cards to retry", "requeued": 0}
+    return {"message": f"Requeued {requeued} card(s)", "requeued": requeued}
+
+
+@app.post("/jobs/{job_id}/orientation")
+async def set_orientation_override(job_id: str, degrees: int):
+    """Manually override orientation for a job's cards and reprocess them.
+
+    `degrees` must be one of 0/90/180/270. Manual override always wins over
+    automatic detection.
+    """
+    job = await batch_processor.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if degrees % 360 not in (0, 90, 180, 270):
+        raise HTTPException(status_code=400, detail="degrees must be 0, 90, 180 or 270")
+
+    job.process_options["manual_orientation"] = degrees % 360
+    requeued = 0
+    for card in job.cards:
+        card.state = CardState.RETRYING
+        card.error = None
+        card.retry_count += 1
+        await batch_processor.queue.put((job_id, card.id))
+        requeued += 1
+    job.status = JobStatus.PROCESSING
+    job.updated_at = datetime.now()
+    return {"message": f"Reprocessing {requeued} card(s) with orientation {degrees}", "requeued": requeued}
+
+
+@app.post("/jobs/{job_id}/export", response_model=ExportResponse)
+async def export_cards(job_id: str, request: Optional[ExportRequest] = None):
+    """Export selected cards, or all completed cards when none specified.
+
+    Produces a ZIP shaped like CardEnhance_Export/{images, manifest.json}.
+    """
+    job = await batch_processor.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    image_ids = request.image_ids if request else None
+    result = await batch_processor.export(job_id, image_ids=image_ids)
+    if result is None:
+        raise HTTPException(status_code=400, detail="No completed cards to export")
+
+    return ExportResponse(
+        job_id=job_id,
+        download_url=result["download_url"],
+        file_count=result["file_count"],
+        total_size_bytes=result["total_size_bytes"],
+        manifest=result["manifest"],
+    )
+
+
+@app.get("/jobs/{job_id}/progress", response_model=BatchProgress)
+async def get_batch_progress(job_id: str):
+    """Aggregate batch progress: total/queued/running/completed/failed/progress."""
+    job = await batch_processor.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return BatchProgress(**job.counts())
+
+
+@app.get("/providers", response_model=ProviderStatusResponse)
+async def get_provider_status():
+    """Report which optional AI providers are configured.
+
+    The core card workflow does NOT depend on any provider; this endpoint only
+    reports augmentation availability.
+    """
+    return ProviderStatusResponse(
+        any_configured=provider_manager.any_configured(),
+        configured_providers=[p.value for p in provider_manager.configured_providers()],
+    )
 
 
 @app.get("/health")
@@ -549,3 +718,13 @@ async def health_check():
         "timestamp": datetime.now().isoformat(),
         "version": settings.APP_VERSION
     }
+
+
+# Serve the built frontend (Vite "dist" output) when it is co-located with the
+# backend (single-service deployment, e.g. the root Dockerfile). Mounted LAST so
+# that API routes take precedence over the static catch-all. When the directory
+# is absent the API runs standalone and the frontend is expected to be hosted
+# separately with VITE_API_URL pointing at this service.
+STATIC_DIR = Path(os.environ.get("STATIC_DIR", "./static"))
+if STATIC_DIR.is_dir() and (STATIC_DIR / "index.html").exists():
+    app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="frontend")

@@ -51,4 +51,9 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Node / frontend
+node_modules/
+dist/
+sports-card-enhancer/app/node_modules/
 ```

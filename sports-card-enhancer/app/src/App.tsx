@@ -12,7 +12,7 @@ import { BatchUploader } from './components/BatchUploader';
 import { JobMonitor } from './components/JobMonitor';
 import { ImagePreview } from './components/ImagePreview';
 import { EnhancementSettings } from './components/EnhancementSettings';
-import { apiService, type JobStatus, type EnhancementSettings as SettingsType } from './services/api';
+import { apiService, type JobStatus, type CardImageInfo, type EnhancementSettings as SettingsType } from './services/api';
 
 export interface ProcessingJob {
   id: string;
@@ -22,6 +22,7 @@ export interface ProcessingJob {
   results?: string[];
   error?: string;
   settings: SettingsType;
+  cards?: CardImageInfo[];
 }
 
 function App() {
@@ -66,14 +67,15 @@ function App() {
     return () => clearInterval(interval);
   }, [jobs]);
 
-  const updateJobStatus = (jobId: string, status: any) => {
+  const updateJobStatus = (jobId: string, status: import('./services/api').JobStatusResponse) => {
     setJobs(prev => prev.map(job => {
       if (job.id === jobId) {
         return {
           ...job,
           status: status.status,
           progress: status.progress,
-          results: status.images?.filter((img: any) => img.processed_path).map((img: any) => img.processed_path)
+          cards: status.images,
+          results: status.images?.filter(img => img.processed_path).map(img => img.processed_path as string)
         };
       }
       return job;
@@ -82,8 +84,13 @@ function App() {
 
   const handleFilesSelected = useCallback(async (files: File[]) => {
     try {
-      const response = await apiService.enhanceImages(files, settings);
-      
+      // Use the core card pipeline (orientation -> crop -> optimize).
+      const response = await apiService.processCards(files, {
+        output_format: settings.output_format,
+        output_quality: settings.output_quality,
+        output_dpi: settings.output_dpi,
+      });
+
       const newJob: ProcessingJob = {
         id: response.job_id,
         status: 'pending',
@@ -91,15 +98,43 @@ function App() {
         files,
         settings: { ...settings }
       };
-      
+
       setJobs(prev => [newJob, ...prev]);
       setActiveTab('monitor');
-      toast.success(`Job ${response.job_id.slice(0, 8)} started with ${files.length} images`);
+      toast.success(`Job ${response.job_id.slice(0, 8)} started with ${files.length} cards`);
     } catch (error) {
-      toast.error('Failed to start enhancement job');
+      toast.error('Failed to start processing job');
       console.error(error);
     }
   }, [settings]);
+
+  // Retry failed cards in a job.
+  const handleRetry = useCallback(async (job: ProcessingJob) => {
+    try {
+      const res = await apiService.retryFailed(job.id);
+      if (res.requeued > 0) {
+        toast.success(`Retrying ${res.requeued} failed card(s)`);
+        setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'processing' } : j));
+      } else {
+        toast.info('No failed cards to retry');
+      }
+    } catch (error) {
+      toast.error('Retry failed');
+      console.error(error);
+    }
+  }, []);
+
+  // Export selected cards or all completed cards as a ZIP.
+  const handleExport = useCallback(async (job: ProcessingJob, selectedIds?: string[]) => {
+    try {
+      const res = await apiService.exportCards(job.id, selectedIds);
+      window.open(res.download_url, '_blank');
+      toast.success(`Exported ${res.file_count} card(s)`);
+    } catch (error) {
+      toast.error('Export failed');
+      console.error(error);
+    }
+  }, []);
 
   const handleDownload = useCallback(async (job: ProcessingJob) => {
     try {
@@ -267,6 +302,8 @@ function App() {
                   onDownload={handleDownload}
                   onPreview={handlePreview}
                   onDelete={handleDeleteJob}
+                  onRetry={handleRetry}
+                  onExport={handleExport}
                 />
               </TabsContent>
 

@@ -35,6 +35,17 @@ class JobStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class CardState(str, Enum):
+    """Independent per-card processing states."""
+    QUEUED = "queued"
+    VALIDATING = "validating"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    RETRYING = "retrying"
+    CANCELLED = "cancelled"
+
+
 class BlemishDetection(BaseModel):
     """Detected blemish information."""
     type: BlemishType
@@ -90,15 +101,23 @@ class CardImage(BaseModel):
     filename: str
     original_path: str
     processed_path: Optional[str] = None
-    width: int
-    height: int
-    format: str
-    size_bytes: int
+    width: int = 0
+    height: int = 0
+    format: str = ""
+    size_bytes: int = 0
     status: JobStatus = JobStatus.PENDING
     progress: float = Field(0.0, ge=0.0, le=100.0)
     detected_blemishes: List[BlemishDetection] = []
     error_message: Optional[str] = None
     processing_time_ms: Optional[int] = None
+    # New pipeline metadata
+    card_state: CardState = CardState.QUEUED
+    orientation: Optional[Dict[str, Any]] = None
+    crop_confidence: Optional[float] = None
+    metrics: Optional[Dict[str, Any]] = None
+    artifacts: Optional[Dict[str, Any]] = None
+    warnings: List[str] = []
+    retry_count: int = 0
 
 
 class BatchJob(BaseModel):
@@ -175,3 +194,50 @@ class WebSocketProgressMessage(BaseModel):
     progress: float
     message: str
     timestamp: datetime
+
+
+class ProcessRequest(BaseModel):
+    """Options for the card-processing pipeline."""
+    manual_orientation: Optional[int] = Field(
+        None, description="Optional 0/90/180/270 orientation override"
+    )
+    output_format: str = Field("png", pattern="^(png|jpg|webp|tiff)$")
+    output_quality: int = Field(95, ge=50, le=100)
+    output_dpi: int = Field(300, ge=72, le=1200)
+    aggressive: bool = False
+
+
+class ExportRequest(BaseModel):
+    """Request to export processed cards."""
+    image_ids: Optional[List[str]] = Field(
+        None,
+        description="Specific card IDs to export. When omitted, all completed "
+                    "cards in the job are exported.",
+    )
+    format: str = Field("zip", pattern="^(zip|png|jpg)$")
+
+
+class ExportResponse(BaseModel):
+    """Response for an export request."""
+    job_id: str
+    download_url: str
+    file_count: int
+    total_size_bytes: int
+    manifest: Dict[str, Any] = {}
+
+
+class BatchProgress(BaseModel):
+    """Aggregate batch progress across cards."""
+    total: int = 0
+    queued: int = 0
+    running: int = 0
+    completed: int = 0
+    failed: int = 0
+    progress: float = 0.0
+
+
+class ProviderStatusResponse(BaseModel):
+    """Reports which AI providers are configured (optional augmentation)."""
+    any_configured: bool
+    configured_providers: List[str]
+    note: str = "AI providers are optional; the core card workflow runs without them."

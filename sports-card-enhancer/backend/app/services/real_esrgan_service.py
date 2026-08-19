@@ -278,16 +278,12 @@ class RealESRGANService:
         # otherwise surface an error so callers can apply their own fallback.
         try:
             upsampler = self.load_model(model_name)
-        except Exception:
-            raise
-            
             # Inference: The RealESRGANer handles the heavy lifting, including tiling
             # Output is a tuple: (result_image, output_info_string)
             result, _ = upsampler.enhance(
                 image,
                 outscale=outscale if outscale is not None else upsampler.scale,
             )
-            
             return result
 
         except torch.cuda.OutOfMemoryError:

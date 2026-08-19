@@ -399,13 +399,7 @@ class BlemishRemover:
     
     def remove_scratches_deep(self, image: np.ndarray, 
                               model: Optional[torch.nn.Module] = None) -> np.ndarray:
-        """Remove scratches using deep learning inpainting (if model available)."""
-        if model is None:
-            # Fall back to traditional method
-            detector = BlemishDetector(sensitivity=0.8)
-            blemishes = detector._detect_scratches(image)
-            return self.remove_blemishes(image, blemishes)
-        
-        # Deep learning approach would go here
-        # This is a placeholder for integration with models like LaMa
-        return image
+        """Remove scratches using the available inpainting pipeline."""
+        detector = BlemishDetector(sensitivity=0.8)
+        blemishes = detector._detect_scratches(image)
+        return self.remove_blemishes(image, blemishes)

@@ -1,339 +1,262 @@
-"""Image processing utilities."""
+"""Image ingestion, validation, and utility helpers."""
+from __future__ import annotations
+
+import hashlib
+import mimetypes
+import os
+import re
+from io import BytesIO
+from pathlib import Path
+from typing import Any
+
 import cv2
 import numpy as np
-from PIL import Image, ImageEnhance, ImageFilter
-from typing import Tuple, Optional, Dict
-import io
-import os
-import logging
+from PIL import Image, ImageOps
 
-logger = logging.getLogger(__name__)
+from app.core.config import settings
+
+PILLOW_FORMAT_TO_MIME = {
+    "JPEG": "image/jpeg",
+    "PNG": "image/png",
+    "WEBP": "image/webp",
+    "BMP": "image/bmp",
+    "TIFF": "image/tiff",
+}
+
+SAFE_FILENAME_PATTERN = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+class ValidationError(ValueError):
+    """Raised when an uploaded image fails validation."""
 
 
 class ImageProcessor:
     """Utility class for image processing operations."""
-    
+
     @staticmethod
-    def load_image(path: str) -> np.ndarray:
-        """Load image from path and return as numpy array.
-        
-        Args:
-            path: Path to the image file
-            
-        Returns:
-            RGB numpy array of the image
-            
-        Raises:
-            ValueError: If image cannot be loaded
-        """
-        try:
-            pil_img = Image.open(path)
-            if pil_img.mode in ('RGBA', 'LA', 'P'):
-                pil_img = pil_img.convert('RGB')
-            return np.array(pil_img)
-        except Exception as e:
-            logger.warning(f"PIL failed to load {path}, trying OpenCV: {e}")
-            img = cv2.imread(path, cv2.IMREAD_COLOR)
-            if img is None:
-                raise ValueError(f"Could not load image: {path}")
-            return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    
+    def load_image(path: str | Path) -> np.ndarray:
+        with Image.open(path) as image:
+            normalized = normalize_exif_orientation(image)
+            return np.array(normalized.convert("RGB"))
+
     @staticmethod
-    def save_image(image: np.ndarray, path: str, quality: int = 95, 
-                   dpi: int = 300) -> None:
-        """Save numpy array as image with format-specific options.
-        
-        Args:
-            image: RGB numpy array
-            path: Output file path
-            quality: JPEG/WebP quality (1-100)
-            dpi: DPI for formats that support it
-        """
-        os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
-        ext = os.path.splitext(path)[1].lower()
-        
-        pil_image = Image.fromarray(image)
-        
-        save_kwargs: Dict = {}
-        if ext in ['.jpg', '.jpeg']:
-            save_kwargs = {'format': 'JPEG', 'quality': quality, 'dpi': (dpi, dpi)}
-        elif ext == '.png':
-            save_kwargs = {'format': 'PNG', 'compress_level': 6, 'dpi': (dpi, dpi)}
-        elif ext == '.webp':
-            save_kwargs = {'format': 'WEBP', 'quality': quality, 'method': 6}
-        elif ext in ['.tiff', '.tif']:
-            save_kwargs = {'format': 'TIFF', 'compression': 'tiff_lzw', 'dpi': (dpi, dpi)}
+    def save_image(
+        image: np.ndarray,
+        path: str | Path,
+        quality: int = 95,
+        dpi: int = 300,
+    ) -> None:
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        pil_image = Image.fromarray(np.clip(image, 0, 255).astype(np.uint8))
+        ext = output_path.suffix.lower()
+        save_kwargs: dict[str, Any] = {}
+        if ext in {".jpg", ".jpeg"}:
+            save_kwargs = {"format": "JPEG", "quality": quality, "subsampling": 0, "dpi": (dpi, dpi)}
+        elif ext == ".png":
+            save_kwargs = {"format": "PNG", "compress_level": 4, "dpi": (dpi, dpi)}
+        elif ext == ".webp":
+            save_kwargs = {"format": "WEBP", "quality": quality, "method": 6}
         else:
-            save_kwargs = {'format': 'PNG', 'dpi': (dpi, dpi)}
-        
-        pil_image.save(path, **save_kwargs)
-    
+            save_kwargs = {"format": "TIFF", "compression": "tiff_lzw", "dpi": (dpi, dpi)}
+        pil_image.save(output_path, **save_kwargs)
+
     @staticmethod
     def resize_image(image: np.ndarray, max_dimension: int) -> np.ndarray:
-        """Resize image while maintaining aspect ratio.
-        
-        Args:
-            image: Input image array
-            max_dimension: Maximum dimension (width or height)
-            
-        Returns:
-            Resized image array
-        """
         height, width = image.shape[:2]
-        
         if max(height, width) <= max_dimension:
             return image
-        
         scale = max_dimension / max(height, width)
-        new_width = int(width * scale)
-        new_height = int(height * scale)
-        
-        return cv2.resize(image, (new_width, new_height), 
-                         interpolation=cv2.INTER_LANCZOS4)
-    
+        return cv2.resize(
+            image,
+            (max(1, int(width * scale)), max(1, int(height * scale))),
+            interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LANCZOS4,
+        )
+
     @staticmethod
-    def pad_to_multiple(image: np.ndarray, multiple: int = 8) -> Tuple[np.ndarray, Tuple[int, int, int, int]]:
-        """Pad image to make dimensions multiples of specified value.
-        
-        Args:
-            image: Input image array
-            multiple: Target multiple for dimensions
-            
-        Returns:
-            Tuple of (padded_image, padding_tuple)
-        """
-        h, w = image.shape[:2]
-        
-        pad_h = (multiple - h % multiple) % multiple
-        pad_w = (multiple - w % multiple) % multiple
-        
-        pad_top = pad_h // 2
-        pad_bottom = pad_h - pad_top
-        pad_left = pad_w // 2
-        pad_right = pad_w - pad_left
-        
-        if len(image.shape) == 3:
-            padded = np.pad(image, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), 
-                           mode='reflect')
-        else:
-            padded = np.pad(image, ((pad_top, pad_bottom), (pad_left, pad_right)), 
-                           mode='reflect')
-        
-        return padded, (pad_top, pad_bottom, pad_left, pad_right)
-    
+    def generate_thumbnail(image: np.ndarray, max_dimension: int | None = None) -> np.ndarray:
+        return ImageProcessor.resize_image(image, max_dimension or settings.THUMBNAIL_MAX_DIMENSION)
+
     @staticmethod
-    def remove_padding(image: np.ndarray, pads: Tuple[int, int, int, int]) -> np.ndarray:
-        """Remove padding from image.
-        
-        Args:
-            image: Padded image array
-            pads: Padding tuple (top, bottom, left, right)
-            
-        Returns:
-            Unpadded image array
-        """
-        pad_top, pad_bottom, pad_left, pad_right = pads
-        h, w = image.shape[:2]
-        
-        bottom_idx = h - pad_bottom if pad_bottom > 0 else h
-        right_idx = w - pad_right if pad_right > 0 else w
-            
-        return image[pad_top:bottom_idx, pad_left:right_idx]
-    
-    @staticmethod
-    def auto_rotate(image: np.ndarray, pil_image: Optional[Image.Image] = None) -> np.ndarray:
-        """Auto-rotate image based on EXIF orientation.
-        
-        Args:
-            image: Input image array
-            pil_image: Optional PIL image for EXIF data extraction
-            
-        Returns:
-            Rotated image array if needed, otherwise original
-        """
-        if pil_image is None:
-            return image
-            
-        try:
-            exif = pil_image._getexif()
-            if exif is not None:
-                orientation = exif.get(274)  # 274 is Orientation tag
-                if orientation == 3:
-                    return cv2.rotate(image, cv2.ROTATE_180)
-                elif orientation == 6:
-                    return cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
-                elif orientation == 8:
-                    return cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
-        except Exception:
-            pass
-        
-        return image
-    
-    @staticmethod
-    def detect_card_border(image: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
-        """Detect card border for automatic cropping.
-        
-        Args:
-            image: Input image array
-            
-        Returns:
-            Bounding box tuple (x, y, w, h) or None if no border detected
-        """
-        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        edges = cv2.Canny(blurred, 50, 150)
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        if not contours:
-            return None
-        
-        largest_contour = max(contours, key=cv2.contourArea)
-        x, y, w, h = cv2.boundingRect(largest_contour)
-        
-        img_area = image.shape[0] * image.shape[1]
-        contour_area = w * h
-        
-        if contour_area < img_area * 0.1:
-            return None
-        
-        return (x, y, w, h)
-    
-    @staticmethod
-    def crop_to_aspect_ratio(image: np.ndarray, 
-                            target_ratio: float = 2.5/3.5) -> np.ndarray:
-        """Crop image to target aspect ratio (default: standard card ratio).
-        
-        Args:
-            image: Input image array
-            target_ratio: Target width/height ratio
-            
-        Returns:
-            Cropped image array
-        """
-        h, w = image.shape[:2]
-        current_ratio = w / h
-        
-        if abs(current_ratio - target_ratio) < 0.01:
-            return image
-        
-        if current_ratio > target_ratio:
-            new_w = int(h * target_ratio)
-            start_x = (w - new_w) // 2
-            return image[:, start_x:start_x + new_w]
-        else:
-            new_h = int(w / target_ratio)
-            start_y = (h - new_h) // 2
-            return image[start_y:start_y + new_h, :]
+    def generate_preview(image: np.ndarray, max_dimension: int | None = None) -> np.ndarray:
+        return ImageProcessor.resize_image(image, max_dimension or settings.PREVIEW_MAX_DIMENSION)
 
 
 class ImageEnhancer:
-    """Image enhancement operations using PIL and OpenCV."""
-    
+    """Image enhancement operations."""
+
     @staticmethod
-    def sharpen(image: np.ndarray, amount: float = 0.5) -> np.ndarray:
-        """Apply sharpening filter.
-        
-        Args:
-            image: Input RGB image array
-            amount: Sharpening strength (0.0 to 1.0)
-            
-        Returns:
-            Sharpened image array
-        """
-        pil_img = Image.fromarray(image)
-        factor = 1 + amount
-        kernel = np.array([[-1, -1, -1],
-                          [-1,  factor + 8, -1],
-                          [-1, -1, -1]]) * (amount / 8)
-        kernel[1, 1] = factor
-        
-        sharpened = pil_img.filter(ImageFilter.Kernel((3, 3), kernel.flatten(), scale=factor))
-        return np.array(sharpened)
-    
+    def sharpen(image: np.ndarray, amount: float = 0.35) -> np.ndarray:
+        blurred = cv2.GaussianBlur(image, (0, 0), sigmaX=1.2)
+        return cv2.addWeighted(image, 1.0 + amount, blurred, -amount, 0)
+
     @staticmethod
-    def adjust_color_temperature(image: np.ndarray, temperature: float) -> np.ndarray:
-        """Adjust color temperature.
-        
-        Args:
-            image: Input RGB image array
-            temperature: Temperature adjustment (-1.0 cooler to 1.0 warmer)
-            
-        Returns:
-            Color-adjusted image array
-        """
-        pil_img = Image.fromarray(image)
-        r, g, b = pil_img.split()
-        
-        r = r.point(lambda i: min(255, int(i * (1 + temperature * 0.1))))
-        b = b.point(lambda i: min(255, int(i * (1 - temperature * 0.1))))
-        
-        return np.array(Image.merge('RGB', (r, g, b)))
-    
+    def adjust_contrast(image: np.ndarray, amount: float = 0.2) -> np.ndarray:
+        alpha = 1.0 + amount
+        beta = 8.0 * amount
+        return cv2.convertScaleAbs(image, alpha=alpha, beta=beta)
+
     @staticmethod
-    def adjust_saturation(image: np.ndarray, factor: float) -> np.ndarray:
-        """Adjust image saturation.
-        
-        Args:
-            image: Input RGB image array
-            factor: Saturation factor (0.0 grayscale to 2.0 oversaturated)
-            
-        Returns:
-            Saturation-adjusted image array
-        """
-        pil_img = Image.fromarray(image)
-        enhancer = ImageEnhance.Color(pil_img)
-        return np.array(enhancer.enhance(factor))
-    
+    def adjust_saturation(image: np.ndarray, factor: float = 1.0) -> np.ndarray:
+        hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV).astype(np.float32)
+        hsv[:, :, 1] = np.clip(hsv[:, :, 1] * factor, 0, 255)
+        return cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
+
     @staticmethod
-    def adjust_contrast(image: np.ndarray, amount: float) -> np.ndarray:
-        """Adjust image contrast.
-        
-        Args:
-            image: Input RGB image array
-            amount: Contrast adjustment (0.0 to 1.0)
-            
-        Returns:
-            Contrast-adjusted image array
-        """
-        pil_img = Image.fromarray(image)
-        enhancer = ImageEnhance.Contrast(pil_img)
-        factor = 0.5 + amount
-        return np.array(enhancer.enhance(factor))
-    
+    def adjust_color_temperature(image: np.ndarray, temperature: float = 0.0) -> np.ndarray:
+        if temperature == 0:
+            return image
+        result = image.astype(np.float32)
+        result[:, :, 0] *= 1.0 + (temperature * 0.08)
+        result[:, :, 2] *= 1.0 - (temperature * 0.08)
+        return np.clip(result, 0, 255).astype(np.uint8)
+
     @staticmethod
-    def reduce_noise(image: np.ndarray, strength: float = 0.5) -> np.ndarray:
-        """Apply noise reduction using non-local means denoising.
-        
-        Args:
-            image: Input RGB image array
-            strength: Denoising strength (0.0 to 1.0)
-            
-        Returns:
-            Denoised image array
-        """
-        h = int(3 + strength * 7)
-        h = h if h % 2 == 1 else h + 1
-        
-        return cv2.fastNlMeansDenoisingColored(image, None, h, h, 7, 21)
-    
+    def reduce_noise(image: np.ndarray, strength: float = 0.35) -> np.ndarray:
+        h_value = max(2, int(3 + (strength * 10)))
+        return cv2.fastNlMeansDenoisingColored(image, None, h_value, h_value, 7, 21)
+
     @staticmethod
-    def enhance_details(image: np.ndarray, amount: float = 0.5) -> np.ndarray:
-        """Enhance fine details using unsharp mask.
-        
-        Args:
-            image: Input RGB image array
-            amount: Enhancement strength (0.0 to 1.0)
-            
-        Returns:
-            Detail-enhanced image array
-        """
-        pil_img = Image.fromarray(image)
-        radius = 2
-        percent = int(50 + amount * 150)
-        threshold = 3
-        
-        enhanced = pil_img.filter(
-            ImageFilter.UnsharpMask(radius=radius, percent=percent, threshold=threshold)
-        )
-        
-        return np.array(enhanced)
+    def enhance_details(image: np.ndarray, amount: float = 0.2) -> np.ndarray:
+        detail = cv2.detailEnhance(image, sigma_s=10, sigma_r=min(0.8, 0.15 + amount * 0.35))
+        return cv2.addWeighted(image, 1.0 - amount * 0.25, detail, amount * 0.25, 0)
+
+
+def calculate_source_hash(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def sanitize_filename(filename: str) -> str:
+    name = os.path.basename(filename or "upload")
+    stem, ext = os.path.splitext(name)
+    clean_stem = SAFE_FILENAME_PATTERN.sub("_", stem).strip("._") or "source"
+    clean_ext = SAFE_FILENAME_PATTERN.sub("", ext.lower())
+    if clean_ext not in settings.ALLOWED_EXTENSIONS:
+        guessed = mimetypes.guess_extension(mimetypes.guess_type(name)[0] or "") or ".png"
+        clean_ext = guessed if guessed in settings.ALLOWED_EXTENSIONS else ".png"
+    return f"{clean_stem}{clean_ext}"
+
+
+def normalize_exif_orientation(image: Image.Image) -> Image.Image:
+    return ImageOps.exif_transpose(image)
+
+
+def decode_image(content: bytes) -> tuple[np.ndarray, dict[str, Any]]:
+    with Image.open(BytesIO(content)) as image:
+        verified_format = (image.format or "").upper()
+        exif = image.getexif()
+        exif_orientation = int(exif.get(274)) if exif.get(274) else None
+        normalized = normalize_exif_orientation(image)
+        rgb_image = normalized.convert("RGB")
+        width, height = rgb_image.size
+        if width <= 0 or height <= 0:
+            raise ValidationError("Could not decode this image.")
+        if width > settings.MAX_IMAGE_DIMENSION or height > settings.MAX_IMAGE_DIMENSION:
+            raise ValidationError("Image dimensions exceed the supported maximum.")
+        if width * height > settings.MAX_IMAGE_PIXELS:
+            raise ValidationError("Image pixel count exceeds the supported maximum.")
+        metadata = {
+            "width": width,
+            "height": height,
+            "format": verified_format.lower(),
+            "mime_type": PILLOW_FORMAT_TO_MIME.get(verified_format, "application/octet-stream"),
+            "exif_orientation": exif_orientation,
+        }
+        return np.array(rgb_image), metadata
+
+
+def validate_upload(
+    content: bytes,
+    filename: str,
+    declared_content_type: str | None,
+) -> dict[str, Any]:
+    if not content:
+        raise ValidationError("The uploaded file is empty.")
+    if len(content) > settings.MAX_FILE_SIZE:
+        raise ValidationError("The uploaded file exceeds the maximum file size.")
+
+    safe_filename = sanitize_filename(filename)
+    ext = Path(safe_filename).suffix.lower()
+    if ext not in settings.ALLOWED_EXTENSIONS:
+        raise ValidationError("Unsupported image format.")
+
+    try:
+        with Image.open(BytesIO(content)) as image:
+            image.verify()
+    except Exception as exc:  # pragma: no cover - Pillow error variants depend on decoder
+        raise ValidationError("Could not decode this image.") from exc
+
+    image_array, decoded = decode_image(content)
+    actual_mime = decoded["mime_type"]
+    if actual_mime not in settings.ALLOWED_MIME_TYPES:
+        raise ValidationError("Unsupported image format.")
+
+    return {
+        "safe_filename": safe_filename,
+        "content_hash": calculate_source_hash(content),
+        "byte_size": len(content),
+        "mime_type": actual_mime,
+        "declared_content_type": declared_content_type,
+        "width": decoded["width"],
+        "height": decoded["height"],
+        "format": decoded["format"],
+        "image": image_array,
+        "exif_orientation": decoded["exif_orientation"],
+    }
+
+
+def store_original(directory: Path, filename: str, content: bytes) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    original_path = directory / filename
+    original_path.write_bytes(content)
+    return original_path
+
+
+class QualityAnalyzer:
+    """Deterministic image-quality metrics."""
+
+    @staticmethod
+    def measure_sharpness(image: np.ndarray) -> float:
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        return float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+    @staticmethod
+    def measure_exposure(image: np.ndarray) -> float:
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        return float(np.mean(gray) / 255.0)
+
+    @staticmethod
+    def measure_contrast(image: np.ndarray) -> float:
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        return float(np.std(gray) / 128.0)
+
+    @staticmethod
+    def measure_white_balance(image: np.ndarray) -> float:
+        channel_means = np.mean(image, axis=(0, 1))
+        return float(np.std(channel_means) / max(np.mean(channel_means), 1.0))
+
+    @staticmethod
+    def measure_highlight_clipping(image: np.ndarray) -> float:
+        return float(np.mean(np.all(image >= 250, axis=2)) * 100.0)
+
+    @staticmethod
+    def measure_shadow_clipping(image: np.ndarray) -> float:
+        return float(np.mean(np.all(image <= 5, axis=2)) * 100.0)
+
+    @staticmethod
+    def estimate_noise(image: np.ndarray) -> float:
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+        return float(np.std(gray.astype(np.float32) - blurred.astype(np.float32)))
+
+    @classmethod
+    def summarize(cls, image: np.ndarray) -> dict[str, float]:
+        return {
+            "sharpness": cls.measure_sharpness(image),
+            "exposure": cls.measure_exposure(image),
+            "contrast": cls.measure_contrast(image),
+            "white_balance": cls.measure_white_balance(image),
+            "highlight_clipping": cls.measure_highlight_clipping(image),
+            "shadow_clipping": cls.measure_shadow_clipping(image),
+            "noise": cls.estimate_noise(image),
+        }

@@ -1,184 +1,108 @@
 # API Reference
 
-Concise reference for the Card Enhancer backend in
-`/home/runner/work/Card-Enhancer-Vercel/Card-Enhancer-Vercel/sports-card-enhancer/backend/app/main.py`.
-
-Interactive docs are also available at:
+Minimal reference for the Card Enhancer backend. For full live schemas, use:
 
 - `GET /docs`
 - `GET /redoc`
 
-## Base behavior
+## Conventions
 
-- Content type is JSON unless an endpoint explicitly returns a file.
-- Upload endpoints use `multipart/form-data`.
-- `settings_json` and `process_json` are JSON-encoded strings inside multipart form data.
-- Job status values: `pending`, `uploading`, `processing`, `completed`, `failed`, `cancelled`.
-- Card state values: `queued`, `validating`, `processing`, `completed`, `failed`, `retrying`, `cancelled`.
+- JSON by default
+- `multipart/form-data` for uploads
+- `settings_json` and `process_json` are JSON strings inside form data
+- Job statuses: `pending`, `uploading`, `processing`, `completed`, `failed`, `cancelled`
+- Card states: `queued`, `validating`, `processing`, `completed`, `failed`, `retrying`, `cancelled`
 
-## Core endpoints
+## Endpoints
 
-### `GET /`
-
-Returns basic service metadata and a small endpoint index.
-
-### `GET /health`
-
-Returns service health:
-
-| Field | Type | Notes |
+| Method | Path | Purpose |
 |---|---|---|
-| `status` | string | Expected value: `healthy` |
-| `timestamp` | string | ISO timestamp |
-| `version` | string | Backend version |
+| `GET` | `/` | Service metadata and endpoint index |
+| `GET` | `/health` | Health check |
+| `GET` | `/providers` | Optional AI provider status |
+| `POST` | `/upload` | Upload images without processing |
+| `POST` | `/enhance` | Upload and start enhancement |
+| `POST` | `/process` | Upload and run the core card pipeline |
+| `POST` | `/preview` | Generate a quick preview image |
+| `GET` | `/status/{job_id}` | Full job status and per-image results |
+| `GET` | `/jobs/{job_id}/progress` | Compact batch progress counts |
+| `DELETE` | `/jobs/{job_id}` | Delete a job and its generated files |
+| `POST` | `/jobs/{job_id}/retry` | Retry failed cards |
+| `POST` | `/jobs/{job_id}/orientation` | Override orientation and requeue cards |
+| `POST` | `/jobs/{job_id}/export` | Export completed cards |
+| `GET` | `/download/{job_id}` | Download metadata |
+| `GET` | `/download/{job_id}/file` | Direct file download |
+| `WS` | `/ws/{job_id}` | Real-time progress stream |
 
-### `GET /providers`
-
-Reports whether optional AI providers are configured.
-
-| Field | Type | Notes |
-|---|---|---|
-| `any_configured` | boolean | `true` when at least one provider is configured |
-| `configured_providers` | string[] | Provider names |
-| `note` | string | Clarifies that providers are optional |
-
-## Upload and processing
+## Upload forms
 
 ### `POST /upload`
 
-Uploads images without starting processing.
-
-**Form fields**
-
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `files` | file[] | Yes | Supported image types only |
-| `settings_json` | string | No | JSON matching `EnhancementSettings` |
+| `files` | file[] | Yes | Supported image files |
+| `settings_json` | string | No | `EnhancementSettings` JSON |
 
-**Response**
-
-| Field | Type |
-|---|---|
-| `job_id` | string |
-| `status` | string |
-| `message` | string |
-| `total_files` | number |
-| `accepted_files` | number |
-| `rejected_files` | number |
-| `rejected_reasons` | string[] |
+Response fields: `job_id`, `status`, `message`, `total_files`, `accepted_files`, `rejected_files`, `rejected_reasons`.
 
 ### `POST /enhance`
 
-Uploads files and starts the enhancement pipeline.
-
-Accepts image files and `.zip` archives containing images.
-
-**Form fields**
-
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `files` | file[] | Yes | Images or ZIP archives |
-| `settings_json` | string | No | JSON matching `EnhancementSettings` |
+| `files` | file[] | Yes | Images or `.zip` archives |
+| `settings_json` | string | No | `EnhancementSettings` JSON |
 
-**Response**
-
-| Field | Type |
-|---|---|
-| `job_id` | string |
-| `status` | string |
-| `message` | string |
-| `estimated_time_seconds` | number |
+Response fields: `job_id`, `status`, `message`, `estimated_time_seconds`.
 
 ### `POST /process`
 
-Uploads files and runs the core card pipeline without requiring an AI provider.
-
-Pipeline summary: orientation -> crop -> perspective -> optimize.
-
-**Form fields**
+Runs the built-in card pipeline: orientation -> crop -> perspective -> optimize.
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `files` | file[] | Yes | Images or ZIP archives |
-| `process_json` | string | No | JSON matching `ProcessRequest` |
-| `settings_json` | string | No | JSON matching `EnhancementSettings` |
+| `files` | file[] | Yes | Images or `.zip` archives |
+| `process_json` | string | No | `ProcessRequest` JSON |
+| `settings_json` | string | No | `EnhancementSettings` JSON |
 
-**Response**
-
-Same shape as `POST /enhance`.
+Response fields: `job_id`, `status`, `message`, `estimated_time_seconds`.
 
 ### `POST /preview`
 
-Generates a quick preview image for one uploaded file.
-
-**Form fields**
-
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `file` | file | Yes | Single image upload |
-| `settings_json` | string | No | JSON matching `EnhancementSettings` |
-
-**Response**
+| `file` | file | Yes | Single image |
+| `settings_json` | string | No | `EnhancementSettings` JSON |
 
 Returns the generated preview file directly.
 
-## Job lifecycle
+## Job and export operations
 
 ### `GET /status/{job_id}`
 
-Returns full job state, aggregate progress, and per-image details.
+Returns:
 
-Top-level response fields:
-
-- `job_id`
-- `status`
-- `progress`
-- `total_images`
-- `completed_images`
-- `failed_images`
-- `images`
-- `created_at`
-- `updated_at`
-
-Each item in `images` can include:
-
-- file metadata: `id`, `filename`, `original_path`, `processed_path`, `width`, `height`, `format`, `size_bytes`
-- progress metadata: `status`, `progress`, `processing_time_ms`, `error_message`
-- pipeline metadata: `card_state`, `orientation`, `crop_confidence`, `metrics`, `artifacts`, `warnings`, `retry_count`
-- blemish metadata: `detected_blemishes`
+- top-level job fields: `job_id`, `status`, `progress`, `total_images`, `completed_images`, `failed_images`, `created_at`, `updated_at`
+- `images`: per-card records with file info, progress, pipeline metadata, warnings, retry count, and detected blemishes
 
 ### `GET /jobs/{job_id}/progress`
 
-Returns compact aggregate counts for a batch:
-
-| Field | Type |
-|---|---|
-| `total` | number |
-| `queued` | number |
-| `running` | number |
-| `completed` | number |
-| `failed` | number |
-| `progress` | number |
+Response fields: `total`, `queued`, `running`, `completed`, `failed`, `progress`.
 
 ### `DELETE /jobs/{job_id}`
 
-Deletes a job and related generated files. If the job is still running, it is cancelled first.
+Deletes the job and generated files. Running jobs are cancelled first.
 
 ### `POST /jobs/{job_id}/retry`
 
-Retries failed cards for a job.
-
-**Query parameters**
+Query parameter:
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `card_id` | string | No | When omitted, retries all failed cards |
+| `card_id` | string | No | Omit to retry all failed cards |
 
 ### `POST /jobs/{job_id}/orientation`
 
-Applies a manual orientation override and requeues the job's cards.
-
-**Query parameters**
+Query parameter:
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
@@ -186,99 +110,65 @@ Applies a manual orientation override and requeues the job's cards.
 
 ### `POST /jobs/{job_id}/export`
 
-Exports selected cards, or all completed cards when no image list is provided.
-
-**JSON body**
+JSON body:
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `image_ids` | string[] | No | Specific card IDs to export |
-| `format` | string | No | Currently validated as `zip`, `png`, or `jpg` |
+| `image_ids` | string[] | No | Specific cards to export |
+| `format` | string | No | Validated as `zip`, `png`, or `jpg` |
 
-**Response**
-
-| Field | Type |
-|---|---|
-| `job_id` | string |
-| `download_url` | string |
-| `file_count` | number |
-| `total_size_bytes` | number |
-| `manifest` | object |
+Response fields: `job_id`, `download_url`, `file_count`, `total_size_bytes`, `manifest`.
 
 ## Downloads
 
 ### `GET /download/{job_id}`
 
-Returns download metadata for a completed job.
-
-| Field | Type |
-|---|---|
-| `job_id` | string |
-| `download_url` | string |
-| `expires_at` | string |
-| `total_size_bytes` | number |
-| `file_count` | number |
+Response fields: `job_id`, `download_url`, `expires_at`, `total_size_bytes`, `file_count`.
 
 ### `GET /download/{job_id}/file`
 
-Returns the actual file download:
+Returns:
 
-- a ZIP archive for multi-image jobs
-- a single image file for single-image jobs
+- a ZIP for multi-image jobs
+- a single image for single-image jobs
 
 ## WebSocket
 
-### `GET /ws/{job_id}` (WebSocket)
-
-Streams progress updates for a job.
+### `WS /ws/{job_id}`
 
 Typical server message fields:
 
-| Field | Type |
-|---|---|
-| `job_id` | string |
-| `image_id` | string \| null |
-| `status` | string |
-| `progress` | number |
-| `message` | string |
-| `timestamp` | string |
+- `job_id`
+- `image_id`
+- `status`
+- `progress`
+- `message`
+- `timestamp`
 
-The client may also send:
+Client cancel message:
 
 ```json
 {"action":"cancel"}
 ```
 
-to request job cancellation.
-
 ## Request schema highlights
 
 ### `EnhancementSettings`
 
-Main knobs accepted through `settings_json`:
+Common fields:
 
-- `blemish_removal`
-- `blemish_sensitivity`
-- `sharpening`
-- `sharpening_amount`
-- `color_correction`
-- `color_temperature`
-- `saturation`
-- `contrast_enhancement`
-- `contrast_amount`
-- `noise_reduction`
-- `noise_reduction_strength`
-- `upscaling`
-- `upscale_factor`
-- `sr_model`
+- `blemish_removal`, `blemish_sensitivity`
+- `sharpening`, `sharpening_amount`
+- `color_correction`, `color_temperature`, `saturation`
+- `contrast_enhancement`, `contrast_amount`
+- `noise_reduction`, `noise_reduction_strength`
+- `upscaling`, `upscale_factor`, `sr_model`
 - `preserve_holographic`
-- `output_format`
-- `output_quality`
-- `output_dpi`
+- `output_format`, `output_quality`, `output_dpi`
 
 ### `ProcessRequest`
 
-Main fields accepted through `process_json`:
+Fields:
 
 - `manual_orientation`
 - `output_format`
@@ -286,8 +176,8 @@ Main fields accepted through `process_json`:
 - `output_dpi`
 - `aggressive`
 
-## Common failure cases
+## Common errors
 
-- `400` for invalid JSON, unsupported files, invalid orientation, or requests made before job completion
-- `404` for unknown `job_id`
-- `500` for missing generated outputs or preview-generation failures
+- `400`: invalid JSON, unsupported files, invalid orientation, or premature download/export request
+- `404`: unknown `job_id`
+- `500`: preview failure or missing generated output

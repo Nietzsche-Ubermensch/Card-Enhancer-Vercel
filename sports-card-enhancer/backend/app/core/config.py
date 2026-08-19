@@ -1,6 +1,6 @@
 """Application configuration settings."""
 from pydantic_settings import BaseSettings
-from typing import Optional, Set
+from typing import List, Optional, Set
 from pathlib import Path
 import os
 
@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "*"
 
     @property
-    def cors_origins_list(self) -> list[str]:
+    def cors_origins_list(self) -> List[str]:
         """Parse CORS_ORIGINS into a list of allowed origins."""
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()] or ["*"]
     

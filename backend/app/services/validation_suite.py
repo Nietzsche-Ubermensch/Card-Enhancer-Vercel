@@ -106,7 +106,7 @@ class ValidationSuite:
     def export_audit_log(self, filepath: str = "validation_report.json", 
                          real_features: Optional[np.ndarray] = None):
         report = {
-            "synthetic_accuracy": self.measure_accuracy() if self.ground_truth is not None else None,
+            "synthetic_accuracy": self.measure_extraction_accuracy() if self.ground_truth is not None else None,
             "feature_correlation": self.correlation_redundancy(real_features) if real_features is not None else None,
             "recommendations": []
         }

@@ -4,6 +4,12 @@ AI-powered sports card image enhancement: batch upload, blemish/scratch/dust
 detection and removal, color/contrast correction, sharpening, and optional
 Real-ESRGAN super-resolution upscaling.
 
+## Canonical repository
+
+`Nietzsche-Ubermensch/Card-Enhancer-Vercel` is the single source of truth for
+all Card Enhancer development. Open future PRs, issues, and feature work here
+to avoid fragmentation across forks and alternate accounts.
+
 ## Components
 
 | Component | Path | Tech |

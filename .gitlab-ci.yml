@@ -69,6 +69,7 @@ publish_space:
     HF_ID_TOKEN:
       aud: https://huggingface.co
   before_script:
+    - apt-get update -qq && apt-get install -y -qq curl
     - curl -LsSf https://hf.co/cli/install.sh | bash
     - export PATH="$HOME/.local/bin:$PATH"
   script:

@@ -71,15 +71,15 @@ publish_space:
   script:
     - echo "Publishing Gradio Space to Hugging Face..."
     - |
-      if [ -n "$HF_ID_TOKEN" ]; then
+      if [ -n "$HF_TOKEN" ]; then
+        hf upload "$HF_SPACE_REPO" ./hf-space . --repo-type space \
+          --commit-message "Deploy Space from GitLab ${CI_COMMIT_SHA:0:7}"
+      elif [ -n "$HF_ID_TOKEN" ]; then
         HF_OIDC_ID_TOKEN="$HF_ID_TOKEN" HF_OIDC_RESOURCE="$HF_SPACE_REPO" \
           hf upload "$HF_SPACE_REPO" ./hf-space . --repo-type space \
             --commit-message "Deploy Space from GitLab ${CI_COMMIT_SHA:0:7}"
-      elif [ -n "$HF_TOKEN" ]; then
-        hf upload "$HF_SPACE_REPO" ./hf-space . --repo-type space \
-          --commit-message "Deploy Space from GitLab ${CI_COMMIT_SHA:0:7}"
       else
-        echo "ERROR: Neither HF_ID_TOKEN nor HF_TOKEN is set."
+        echo "ERROR: Neither HF_TOKEN nor HF_ID_TOKEN is set."
         exit 1
       fi
   environment:

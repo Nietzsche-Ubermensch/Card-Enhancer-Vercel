@@ -1,4 +1,5 @@
-gradio>=4.44.0
+gradio>=4.44.0,<5
+audioop-lts>=0.2.1; python_version>='3.13'
 opencv-python-headless>=4.9.0.76
 pillow>=10.2.0
 numpy>=1.26.3

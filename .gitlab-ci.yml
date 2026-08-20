@@ -3,10 +3,6 @@
 # Auth: HF_TOKEN CI variable (OIDC optional)
 
 variables:
-  HF_USERNAME: ${HF_USERNAME}
-  HF_MODEL_REPO: ${HF_MODEL_REPO}
-  HF_SPACE_REPO: ${HF_SPACE_REPO}
-  HF_DATASET_REPO: ${HF_DATASET_REPO}
   PIP_CACHE_DIR: "${CI_PROJECT_DIR}/.cache/pip"
   HF_HUB_CACHE: "${CI_PROJECT_DIR}/.cache/huggingface"
   PYTHONUNBUFFERED: "1"
@@ -73,7 +69,7 @@ publish_space:
     - curl -LsSf https://hf.co/cli/install.sh | bash
     - export PATH="$HOME/.local/bin:$PATH"
   script:
-    - echo "Publishing Streamlit Space to Hugging Face..."
+    - echo "Publishing Gradio Space to Hugging Face..."
     - |
       if [ -n "$HF_ID_TOKEN" ]; then
         HF_OIDC_ID_TOKEN="$HF_ID_TOKEN" HF_OIDC_RESOURCE="$HF_SPACE_REPO" \

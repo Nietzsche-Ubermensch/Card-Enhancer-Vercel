@@ -42,7 +42,9 @@ unit_tests:
   <<: *base_linux
   stage: test
   script:
-    - pip install --cache-dir="$PIP_CACHE_DIR" -r sports-card-enhancer/backend/requirements.txt || true
+    - apt-get update -qq && apt-get install -y -qq libgl1 libglib2.0-0
+    - pip install --cache-dir="$PIP_CACHE_DIR" -r sports-card-enhancer/backend/requirements.txt
+    - export PYTHONPATH="$CI_PROJECT_DIR/sports-card-enhancer/backend"
     - pytest sports-card-enhancer/backend/tests -v --tb=short --junitxml=report.xml
   artifacts:
     when: always

@@ -35,7 +35,7 @@ lint:
   <<: *base_linux
   stage: lint
   script:
-    - ruff check backend/dcpt_pipeline sports-card-enhancer/backend sports-card-enhancer/streamlit_app.py hf-space
+    - ruff check hf-space
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == "main"'

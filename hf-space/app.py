@@ -7,8 +7,6 @@ gradio | docker | static for new Spaces).
 
 from __future__ import annotations
 
-from typing import List, Tuple
-
 import cv2
 import gradio as gr
 import numpy as np
@@ -20,7 +18,7 @@ class BlemishDetector:
         self.sensitivity = sensitivity
         self.min_defect_size = int(10 + (1 - sensitivity) * 40)
 
-    def detect_scratches(self, image: np.ndarray) -> List[Tuple]:
+    def detect_scratches(self, image: np.ndarray) -> list[tuple]:
         gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         enhanced = clahe.apply(gray)
@@ -47,7 +45,7 @@ class BlemishDetector:
                     blemishes.append(("scratch", confidence, (x, y, w, h)))
         return blemishes
 
-    def detect_dust(self, image: np.ndarray) -> List[Tuple]:
+    def detect_dust(self, image: np.ndarray) -> list[tuple]:
         gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
         inverted = 255 - gray
         _, thresh = cv2.threshold(
@@ -68,13 +66,13 @@ class BlemishDetector:
                     blemishes.append(("dust", confidence, (x, y, w, h)))
         return blemishes
 
-    def detect_all(self, image: np.ndarray) -> List[Tuple]:
+    def detect_all(self, image: np.ndarray) -> list[tuple]:
         return self.detect_scratches(image) + self.detect_dust(image)
 
 
 class ImageEnhancer:
     @staticmethod
-    def remove_blemishes(image: np.ndarray, blemishes: List[Tuple]) -> np.ndarray:
+    def remove_blemishes(image: np.ndarray, blemishes: list[tuple]) -> np.ndarray:
         if not blemishes:
             return image
         h, w = image.shape[:2]

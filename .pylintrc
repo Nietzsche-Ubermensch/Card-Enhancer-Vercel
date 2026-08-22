@@ -1,0 +1,20 @@
+# Pylint configuration for the CI workflow (.github/workflows/pylint.yml).
+#
+# The workflow runs `pylint --errors-only $(git ls-files '*.py')`. The settings
+# below make that lint pass reliably on this repository:
+#
+#  * import-error is disabled because CI installs only `pylint` and not the
+#    project's heavy third-party dependencies (opencv, torch, streamlit,
+#    fastapi, pydantic, ...). Without them pylint would fail on every import.
+#  * no-member is disabled for the same reason: static analysis cannot see the
+#    members provided by the C-extension modules (cv2, torch) or by pydantic
+#    model fields, producing false positives. Real attribute bugs are still
+#    caught by tests.
+#
+# Keep this file minimal -- only relax checks that are unreliable in CI.
+
+[MESSAGES CONTROL]
+
+disable =
+    import-error,
+    no-member,

@@ -14,7 +14,7 @@ export async function linearMcpClient() {
     transport: {
       type: "http",
       url: LINEAR_MCP_URL,
-      authProvider,
+      authProvider: authProvider as never,
     },
   });
 }

@@ -11,13 +11,11 @@ const XAI_ENV_ALIASES = [
 ] as const;
 
 export function hasKey(provider: AIProvider): boolean {
-  if (provider === "xAI") return hasEnv(...XAI_ENV_ALIASES);
-  return Boolean(process.env[AI_PROVIDER_META[provider].env]);
+  return provider === "xAI" && hasEnv(...XAI_ENV_ALIASES);
 }
 
 export function requireKey(provider: AIProvider = ACTIVE_AI_PROVIDER): string | null {
-  if (provider === "xAI") return firstEnv(...XAI_ENV_ALIASES);
-  return process.env[AI_PROVIDER_META[provider].env] || null;
+  return provider === "xAI" ? firstEnv(...XAI_ENV_ALIASES) : null;
 }
 
 export function providerStatus() {

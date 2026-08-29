@@ -24,7 +24,7 @@ export async function linearConnectMetadata() {
 
 export async function linearStartAuthorization(returnUrl?: string) {
   const { startAuthorization } = await import("@vercel/connect");
-  return startAuthorization(LINEAR_CONNECT_ID, { subject: LINEAR_APP_SUBJECT }, { returnUrl });
+  return startAuthorization(LINEAR_CONNECT_ID, { subject: LINEAR_APP_SUBJECT }, { callbackUrl: returnUrl });
 }
 
 export async function linearRevokeToken() {

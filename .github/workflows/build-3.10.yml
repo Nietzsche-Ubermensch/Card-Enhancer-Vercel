@@ -1,0 +1,13 @@
+name: build (3.10)
+on:
+  push:
+  pull_request:
+  repository_dispatch:
+    types: [vercel.deployment.ready, vercel.deployment.success]
+jobs:
+  build:
+    name: build (3.10)
+    runs-on: ubuntu-latest
+    steps:
+      - name: nitro host
+        run: echo "JUG-19 Card Enhancer is TanStack Start + Nitro. Python 3.10 matrix is N/A."

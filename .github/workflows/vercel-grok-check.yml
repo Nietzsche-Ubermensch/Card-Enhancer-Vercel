@@ -1,0 +1,70 @@
+# JUG-19 — Vercel Deployment Check
+# Check name MUST match Project → Deployment Checks:
+#   "Vercel - hermes-gitlab-integration: grok"
+name: Vercel grok check
+
+on:
+  repository_dispatch:
+    types:
+      - vercel.deployment.ready
+      - vercel.deployment.success
+      - vercel.deployment.error
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Nitro origin to curl (e.g. https://hermes-gitlab-integration.vercel.app)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  statuses: write
+  checks: write
+
+jobs:
+  jug19-api:
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.action == 'vercel.deployment.ready' ||
+      github.event.action == 'vercel.deployment.success'
+    steps:
+      - name: notify vercel
+        uses: vercel/repository-dispatch/actions/status@v1
+        with:
+          name: Vercel - hermes-gitlab-integration: grok
+
+      - name: Curl 7 /api routes
+        env:
+          BASE: ${{ github.event.client_payload.url || inputs.base_url }}
+        run: |
+          set -euo pipefail
+          test -n "${BASE}"
+          echo "BASE=${BASE} GMT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          fail=0
+          for p in /api/ai/status /api/pipeline /api/models /api/source /api/connectors /api/jobs /api/webhooks/linear; do
+            url="${BASE}${p}"
+            if [ "$p" = /api/source ]; then
+              url="${BASE}/api/source?owner=Nietzsche-Ubermensch&repo=card-enhancer-suite"
+            fi
+            code=$(curl -sS -o /tmp/b.json -w "%{http_code} %{content_type}" --max-time 30 "$url" || echo "000 fail")
+            echo "$p $code"
+            python3 -c "import json,sys; json.load(open('/tmp/b.json'))" || { echo "  not json"; fail=1; continue; }
+            echo "$code" | grep -qE '^200 .*application/json' || fail=1
+          done
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.parse
+          base=os.environ["BASE"].rstrip("/")
+          d=json.load(urllib.request.urlopen(base+"/api/ai/status", timeout=30))
+          print("status", {k:d.get(k) for k in ("ok","provider","available","keys")})
+          if d.get("provider") != "xAI":
+              raise SystemExit("provider is not xAI")
+          m=json.load(urllib.request.urlopen(base+"/api/models", timeout=30))
+          names=[f.get("name") for f in (m.get("families") or [])]
+          print("families", names)
+          q=urllib.parse.urlencode({"owner":"Nietzsche-Ubermensch","repo":"card-enhancer-suite"})
+          s=json.load(urllib.request.urlopen(base+"/api/source?"+q, timeout=30))
+          paths=[t.get("path") for t in (s.get("tree") or [])]
+          print("batch.py", "gigapixel/batch.py" in paths, "fileCount", s.get("fileCount"))
+          PY
+          exit "$fail"

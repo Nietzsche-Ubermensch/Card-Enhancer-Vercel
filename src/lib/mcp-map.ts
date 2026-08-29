@@ -4,7 +4,7 @@ export const MCP_MAP = [
     id: "linear",
     ours: "Linear MCP",
     live: true,
-    note: "Juggintillwedie · JUG board. Agent-side. Inbound webhook is /api/webhooks/linear on the Node host only.",
+    note: "Juggintillwedie · JUG board. Vercel Connect linear/hermes-gitlab-integration (app). HMAC /api/webhooks/linear; OIDC /triggers/linear.",
   },
   {
     id: "github",

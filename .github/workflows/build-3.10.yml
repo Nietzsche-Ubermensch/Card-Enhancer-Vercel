@@ -1,0 +1,35 @@
+# Check name MUST stay "build (3.10)" — Vercel Deployment Checks match it.
+name: build (3.10)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  repository_dispatch:
+    types: [vercel.deployment.ready, vercel.deployment.success]
+  workflow_dispatch:
+
+concurrency:
+  group: build-3.10-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (3.10)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Auth invariant
+        run: npm run check:auth
+      - name: Real-ESRGAN contract
+        run: node --experimental-strip-types --test src/lib/realesrgan.test.ts src/lib/huggingface-webhook.test.ts src/lib/linear-webhook.test.ts

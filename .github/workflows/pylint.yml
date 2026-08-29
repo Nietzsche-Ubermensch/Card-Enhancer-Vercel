@@ -1,0 +1,29 @@
+# Leftover Python check from the old Card-Enhancer-Vercel tree.
+# This app is TypeScript/Nitro. Pass when there are no .py files.
+name: Pylint
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip or lint Python
+        run: |
+          set -euo pipefail
+          files=$(git ls-files '*.py' || true)
+          if [ -z "$files" ]; then
+            echo "No Python files in this Nitro app. Pylint N/A."
+            exit 0
+          fi
+          python3 -m pip install --upgrade pip pylint
+          pylint $files

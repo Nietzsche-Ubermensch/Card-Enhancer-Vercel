@@ -12,7 +12,7 @@ const NAV = [
   { to: "/models", label: "Models", desc: "Hugging Face upscalers", icon: Box },
   { to: "/source", label: "Source", desc: "GitHub pipeline", icon: Github },
   { to: "/score", label: "Scoring", desc: "Truth reward", icon: Scale },
-  { to: "/generate", label: "Art studio", desc: "Grok image generation", icon: Wand2 },
+  { to: "/generate", label: "Art studio", desc: "Imagine · image models", icon: Wand2 },
   { to: "/assistant", label: "Lumina", desc: "Grading assistant", icon: MessageSquare },
   { to: "/suite", label: "Suite", desc: "Landing", icon: Home },
 ] as const;

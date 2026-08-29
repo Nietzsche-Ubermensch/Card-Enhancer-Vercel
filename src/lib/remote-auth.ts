@@ -32,10 +32,15 @@ export function githubHeaders(): Record<string, string> {
 
 export function credentialPresence() {
   return {
-    XAI_API_KEY: hasEnv("XAI_API_KEY"),
+    XAI_API_KEY: hasEnv("XAI_API_KEY", "GROK_API_KEY", "XAI_KEY", "X_AI_API_KEY"),
+    AI_GATEWAY_API_KEY: hasEnv("AI_GATEWAY_API_KEY"),
     HF_TOKEN: hasEnv("HF_TOKEN", "HUGGINGFACE_API_KEY", "HUGGINGFACE_TOKEN"),
     GITHUB_TOKEN: hasEnv("GITHUB_TOKEN", "GH_TOKEN", "GITHUB_PAT"),
     LINEAR_API_KEY: hasEnv("LINEAR_API_KEY", "LINEAR_API_TOKEN"),
     LINEAR_WEBHOOK_SECRET: hasEnv("LINEAR_WEBHOOK_SECRET"),
+    OPENAI_API_KEY: hasEnv("OPENAI_API_KEY"),
+    GEMINI_API_KEY: hasEnv("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    OPENROUTER_API_KEY: hasEnv("OPENROUTER_API_KEY"),
+    VENICE_API_KEY: hasEnv("VENICE_API_KEY"),
   };
 }

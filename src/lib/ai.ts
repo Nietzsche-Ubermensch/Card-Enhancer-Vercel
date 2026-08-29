@@ -3,7 +3,8 @@ import type { AnalysisResult } from "./types";
 import { ACTIVE_AI_PROVIDER, AI_PROVIDER_META } from "./ai/provider";
 import { providerStatus } from "./ai/keys";
 import { takeRateSlot } from "./ai/rate-limit";
-import { xaiChat, xaiImage } from "./ai/xai";
+import { xaiChat } from "./ai/xai";
+import { generateTradingCardImage, imageStack } from "./ai/images";
 import { analyzeBodySchema, chatBodySchema, generateBodySchema } from "./ai/schemas";
 import { credentialPresence } from "./remote-auth";
 
@@ -19,6 +20,7 @@ export const getAiStatus = createServerFn({ method: "GET" }).handler(async () =>
     available: status.available,
     provider: status.active,
     models: AI_PROVIDER_META[ACTIVE_AI_PROVIDER],
+    imageStack: imageStack(),
     keys: status.keys,
     credentials: credentialPresence(),
   };
@@ -48,7 +50,7 @@ export const generateCardArt = createServerFn({ method: "POST" })
     const limited = takeRateSlot();
     if (limited) return { ok: false as const, error: limited };
     const prompt = `Trading card artwork, centered subject, collectible card composition, sharp print-ready detail, cinematic lighting, no watermark, no text overlay unless requested. ${data.prompt}`;
-    return xaiImage({ prompt, size: data.size });
+    return generateTradingCardImage({ prompt, size: data.size });
   });
 
 export const analyzeCard = createServerFn({ method: "POST" })

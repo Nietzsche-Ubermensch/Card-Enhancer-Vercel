@@ -10,7 +10,7 @@
   --color-subtle: rgba(255, 255, 255, 0.5);
   --color-accent: #ffffff;
   --color-accent-fg: #0101f2;
-  --color-steel: #ffffff;
+  --color-steel: #00f3ff;
   --color-border: rgba(255, 255, 255, 0.28);
   --color-ok: #d7f5d9;
   --color-warn: #fff1b8;
@@ -78,6 +78,27 @@
   .panel {
     background: var(--color-surface);
     border: 1px solid var(--color-border);
+  }
+
+  .scanline {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 2px;
+    background: var(--color-steel);
+    box-shadow: 0 0 10px var(--color-steel);
+    animation: scanline 3s linear infinite;
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scanline { animation: none; }
+  }
+
+  @keyframes scanline {
+    from { transform: translateY(0); }
+    to { transform: translateY(28rem); }
   }
 
   .panel-paper {

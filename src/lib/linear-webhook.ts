@@ -203,6 +203,7 @@ export function ingestLinearWebhook(input: IngestInput): IngestResult {
   };
   inbox.unshift(event);
   if (inbox.length > INBOX_CAP) inbox.length = INBOX_CAP;
+  void persistLinearDelivery(event);
   return { ok: true, event };
 }
 
@@ -212,6 +213,63 @@ export function listLinearDeliveries(): LinearDelivery[] {
 
 export function clearLinearDeliveries() {
   if (g.__linearWebhookInbox) g.__linearWebhookInbox.length = 0;
+}
+
+
+async function persistLinearDelivery(event: LinearDelivery): Promise<void> {
+  try {
+    const { getSql } = await import("./db");
+    const sql = await getSql();
+    await sql.query(
+      `insert into linear_webhook_deliveries
+        (id, received_at, source, signature, event, action, type, identifier, title, state, actor, url, changed)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
+       on conflict (id) do nothing`,
+      [
+        event.id,
+        event.receivedAt,
+        event.source,
+        event.signature,
+        event.event,
+        event.action,
+        event.type,
+        event.identifier,
+        event.title,
+        event.state,
+        event.actor,
+        event.url ?? null,
+        JSON.stringify(event.changed),
+      ],
+    );
+  } catch {
+    // Memory inbox still holds the event if SQL is not ready.
+  }
+}
+
+export async function listLinearDeliveriesSql(limit = 50) {
+  const { getSql } = await import("./db");
+  const sql = await getSql();
+  return sql.query<{
+    id: string;
+    received_at: string;
+    source: string;
+    signature: string;
+    event: string;
+    action: string;
+    type: string;
+    identifier: string;
+    title: string;
+    state: string;
+    actor: string;
+    url: string | null;
+    changed: unknown;
+  }>(
+    `select id, received_at, source, signature, event, action, type, identifier, title, state, actor, url, changed
+     from linear_webhook_deliveries
+     order by received_at desc
+     limit $1`,
+    [limit],
+  );
 }
 
 export type ReplaySample = "issue.update" | "issue.create" | "comment.create";

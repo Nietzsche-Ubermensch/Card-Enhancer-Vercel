@@ -9,6 +9,8 @@ export const LINEAR_BOARD = {
   projectUrl: "https://linear.app/bateyjules/project/execute-implementation-contract-for-cardcrop-ai-suite-5349adac1e4f",
   teamUrl: "https://linear.app/bateyjules/team/JUG/all",
   webhookPath: "/api/webhooks/linear",
+  connectPath: "/triggers/linear",
+  connectId: "linear/hermes-gitlab-integration",
   webhookDocs: "https://linear.app/developers/webhooks",
 } as const;
 

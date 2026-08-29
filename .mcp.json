@@ -1,0 +1,62 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/workspace"
+      ]
+    },
+    "linear": {
+      "url": "https://mcp.linear.app/mcp"
+    },
+    "gitmcp": {
+      "url": "https://gitmcp.io/Nietzsche-Ubermensch/card-enhancer-suite"
+    },
+    "github": {
+      "url": "https://api.githubcopilot.com/mcp/"
+    },
+    "huggingface": {
+      "url": "https://huggingface.co/mcp"
+    },
+    "vercel": {
+      "url": "https://mcp.vercel.com"
+    },
+    "figma": {
+      "url": "https://mcp.figma.com/mcp"
+    },
+    "cloudflare": {
+      "url": "https://docs.mcp.cloudflare.com/mcp"
+    },
+    "netlify": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@netlify/mcp"
+      ]
+    },
+    "grok-build": {
+      "command": "/usr/bin/node",
+      "args": [
+        "--experimental-strip-types",
+        "/workspace/mcp/grok-build/server.ts"
+      ],
+      "env": {
+        "GROK_BUILD_DEFAULT_MODEL": "grok-4.6",
+        "GROK_BUILD_PLUGIN_DATA": "/workspace/.grok/plugin-data/grok-build",
+        "GROK_BUILD_API_FALLBACK": "true",
+        "GROK_BUILD_ALLOW_WRITE": "true",
+        "GROK_BUILD_ALLOW_ALWAYS_APPROVE": "true",
+        "GROK_BUILD_XAI_BASE_URL": "https://api.x.ai/v1",
+        "GROK_BUILD_XAI_TIMEOUT_MS": "120000",
+        "GROK_BUILD_GROK_AUTH_PATH": "/root/.grok",
+        "GROK_BUILD_TTS_BASE_URL": "https://api.x.ai/v1/tts",
+        "GROK_BUILD_NODE": "/usr/bin/node",
+        "GROK_BUILD_CWD": "/workspace",
+        "GROK_BUILD_TOOL_TIMEOUT_MS": "180000",
+        "GROK_BUILD_HANDSHAKE_TIMEOUT_MS": "15000"
+      }
+    }
+  }
+}

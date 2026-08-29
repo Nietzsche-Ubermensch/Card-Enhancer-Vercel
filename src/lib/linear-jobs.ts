@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { LINEAR_BOARD, LINEAR_ISSUES, linearCounts, type LinearIssue } from "./linear-board";
+import { linearConnectToken } from "./linear-connect";
 import { firstEnv } from "./remote-auth";
 
 export type LinearJobsPayload = {
@@ -16,8 +17,12 @@ function mapType(type: string): LinearIssue["statusType"] {
   return "backlog";
 }
 
+async function linearAuth(): Promise<string | null> {
+  return firstEnv("LINEAR_API_KEY", "LINEAR_API_TOKEN") ?? (await linearConnectToken());
+}
+
 export async function loadLinearJobs(): Promise<LinearJobsPayload> {
-  const key = firstEnv("LINEAR_API_KEY", "LINEAR_API_TOKEN");
+  const key = await linearAuth();
   if (!key) {
     return { source: "snapshot", board: LINEAR_BOARD, issues: LINEAR_ISSUES, counts: linearCounts() };
   }

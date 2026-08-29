@@ -3,6 +3,7 @@ import { AI_PROVIDER_META, AI_PROVIDERS } from "./ai/provider";
 import { hasKey } from "./ai/keys";
 import { GIT_PIPELINE, HF_BATCH_BACKEND, OUTPUT_PRESETS } from "./sports-card";
 import { LINEAR_BOARD } from "./linear-board";
+import { LINEAR_CONNECT_ID } from "./connect/ids";
 import { loadLinearJobs } from "./linear-jobs";
 import { hasEnv, githubHeaders, huggingfaceHeaders } from "./remote-auth";
 
@@ -96,6 +97,14 @@ export async function runConnectorProbe(): Promise<{ rows: ConnectorRow[]; live:
         ? `${LINEAR_BOARD.teamKey} · ${linear.counts.done} done · ${linear.counts.open} open · ${linear.source} · ${hmac}`
         : `${LINEAR_BOARD.teamKey} · snapshot · ${hmac}`,
       href: LINEAR_BOARD.projectUrl,
+    },
+    {
+      id: "vercel-connect",
+      name: "Vercel Connect",
+      kind: "jobs",
+      state: linear?.source === "live" ? "live" : "protocol",
+      detail: `${LINEAR_CONNECT_ID} · app token · OIDC /triggers/linear · HMAC /api/webhooks/linear`,
+      href: "https://vercel.com/docs/connect",
     },
   ];
 

@@ -42,7 +42,7 @@ jobs:
           test -n "${BASE}"
           echo "BASE=${BASE} GMT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           fail=0
-          for p in /api/ai/status /api/pipeline /api/models /api/source /api/connectors /api/jobs /api/webhooks/linear; do
+          for p in /api/ai/status /api/pipeline /api/models /api/source /api/connectors /api/jobs /api/webhooks/linear /api/upscale /api/connect /triggers/linear; do
             url="${BASE}${p}"
             if [ "$p" = /api/source ]; then
               url="${BASE}/api/source?owner=Nietzsche-Ubermensch&repo=card-enhancer-suite"

@@ -3,8 +3,46 @@ import { ProcessingStatus } from "@/lib/types";
 import { detectCardEdges } from "@/lib/edge-detection";
 import { getRotatedCanvas } from "@/lib/image-rotation";
 import { WebGLCardRenderer } from "@/webgl/renderer";
-import { CARD_INCHES, OUTPUT_PRESETS, type JsonlEntry, type OutputDpi } from "@/lib/sports-card";
+import { CARD_INCHES, HF_BATCH_BACKEND, OUTPUT_PRESETS, type JsonlEntry, type OutputDpi } from "@/lib/sports-card";
 import type { QueuedCard } from "@/lib/batch-store";
+
+
+async function blobToDataUrl(blob: Blob) {
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let bin = "";
+  for (const b of buf) bin += String.fromCharCode(b);
+  return `data:${blob.type || "image/jpeg"};base64,${btoa(bin)}`;
+}
+
+async function hubRealEsrgan(
+  blob: Blob,
+  outW: number,
+  outH: number,
+  quality: number,
+): Promise<{ ok: true; blob: Blob } | { ok: false; error: string }> {
+  const image = await blobToDataUrl(blob);
+  const res = await fetch("/api/upscale", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image }),
+    signal: AbortSignal.timeout(60_000),
+  }).catch(() => null);
+  if (!res) return { ok: false, error: "Hub unreachable" };
+  const body = (await res.json().catch(() => null)) as { ok?: boolean; image?: string; error?: string } | null;
+  if (!body?.ok || !body.image) return { ok: false, error: body?.error ?? `Hub ${res.status}` };
+  const decoded = await decodeImage(body.image);
+  const canvas = document.createElement("canvas");
+  canvas.width = outW;
+  canvas.height = outH;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return { ok: false, error: "print canvas failed" };
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(decoded, 0, 0, outW, outH);
+  const next = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+  if (!next) return { ok: false, error: "print jpeg failed" };
+  return { ok: true, blob: next };
+}
 
 function yieldFrame() {
   return new Promise<void>((resolve) => {
@@ -120,7 +158,18 @@ export async function runWebglBatch(cards: QueuedCard[], opts: BatchRunOptions):
               bottomLeft: { x: 0, y: 1 },
             };
       const quality = card.customSettings?.jpegQuality ?? opts.settings.jpegQuality;
-      const blob = await renderer.exportBatchCard(img, quad, cardEnhance, outW, outH, "image/jpeg", quality);
+      let blob = await renderer.exportBatchCard(img, quad, cardEnhance, outW, outH, "image/jpeg", quality);
+      let backend: JsonlEntry["backend"] = "webgl";
+      if (opts.settings.hubRealEsrgan) {
+        const hub = await hubRealEsrgan(blob, outW, outH, quality);
+        if (hub.ok) {
+          blob = hub.blob;
+          backend = "webgl+realesrgan";
+          opts.onLog(`hub ${HF_BATCH_BACKEND.id} ×${HF_BATCH_BACKEND.scale} ${card.file.name}`);
+        } else {
+          opts.onLog(`hub skip ${card.file.name}: ${hub.error}`);
+        }
+      }
       const url = URL.createObjectURL(blob);
       if (card.processedUrl?.startsWith("blob:")) URL.revokeObjectURL(card.processedUrl);
       const ms = Math.round(performance.now() - t0);
@@ -144,6 +193,7 @@ export async function runWebglBatch(cards: QueuedCard[], opts: BatchRunOptions):
         ms,
         width: outW,
         height: outH,
+        backend,
       });
       opts.onLog(`ok ${card.file.name}  ${ms}ms  eta ${Math.round(eta / 1000)}s`);
     } catch (err) {

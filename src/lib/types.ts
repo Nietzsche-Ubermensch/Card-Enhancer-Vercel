@@ -141,6 +141,7 @@ export interface BatchSettings {
   microDustFilter: boolean;
   antiGlare: boolean;
   chromeParallelClarity: boolean;
+  hubRealEsrgan: boolean;
 }
 
 export interface CardImage {
@@ -179,6 +180,7 @@ export const DEFAULT_BATCH_SETTINGS: BatchSettings = {
   microDustFilter: true,
   antiGlare: true,
   chromeParallelClarity: true,
+  hubRealEsrgan: true,
 };
 
 export const STANDARD_QUAD: CropQuad = {

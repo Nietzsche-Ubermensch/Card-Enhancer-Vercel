@@ -68,6 +68,7 @@ export type JsonlEntry = {
   ms?: number;
   width?: number;
   height?: number;
+  backend?: "webgl" | "webgl+realesrgan";
 };
 
 export function loadCompletedInputs(): Set<string> {

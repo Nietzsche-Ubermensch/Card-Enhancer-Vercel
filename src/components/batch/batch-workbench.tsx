@@ -435,6 +435,14 @@ export function BatchWorkbench() {
               />
             </label>
             <label className="flex items-center justify-between text-xs tracking-widest uppercase min-h-11">
+              Hub Real-ESRGAN ×2
+              <input
+                type="checkbox"
+                checked={settings.hubRealEsrgan}
+                onChange={(e) => setSettings({ ...settings, hubRealEsrgan: e.target.checked })}
+              />
+            </label>
+            <label className="flex items-center justify-between text-xs tracking-widest uppercase min-h-11">
               Resume JSONL
               <input type="checkbox" checked={resume} onChange={(e) => setResume(e.target.checked)} />
             </label>
@@ -489,7 +497,7 @@ export function BatchWorkbench() {
                 {pipeline?.hf.downloads != null ? ` · ${pipeline.hf.downloads} downloads` : ""}
               </p>
               <p className="micro text-subtle leading-relaxed">
-                Local WebGL runs the {MIN_BATCH_TARGET}+ queue at print size. Hub weights are the ×2 catalog.
+                Local WebGL crops/descratch. With Hub Real-ESRGAN ×2 on, each JPEG hits hlky/RealESRGAN_x2plus (needs HF_TOKEN).
               </p>
             </div>
             <div className="panel p-3 space-y-1">

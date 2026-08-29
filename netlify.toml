@@ -1,0 +1,13 @@
+[build]
+  publish = "netlify-dist"
+  command = "true"
+
+[[redirects]]
+  from = "/batch"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

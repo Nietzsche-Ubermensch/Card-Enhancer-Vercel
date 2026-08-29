@@ -1,0 +1,12 @@
+node_modules
+.vercel
+.netlify
+screenshots
+attachments
+artifacts
+netlify-dist
+.grok
+*.log
+.env
+.env.*
+.project_id

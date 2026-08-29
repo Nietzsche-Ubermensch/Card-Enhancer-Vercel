@@ -19,11 +19,17 @@ import { Route as ScoreRouteImport } from './routes/score'
 import { Route as SourceRouteImport } from './routes/source'
 import { Route as StudioRouteImport } from './routes/studio'
 import { Route as SuiteRouteImport } from './routes/suite'
+import { Route as ApiConnectRouteImport } from './routes/api/connect'
 import { Route as ApiConnectorsRouteImport } from './routes/api/connectors'
 import { Route as ApiJobsRouteImport } from './routes/api/jobs'
 import { Route as ApiModelsRouteImport } from './routes/api/models'
 import { Route as ApiPipelineRouteImport } from './routes/api/pipeline'
 import { Route as ApiSourceRouteImport } from './routes/api/source'
+import { Route as ApiUpscaleRouteImport } from './routes/api/upscale'
+import { Route as ApiWebhookAuditRouteImport } from './routes/api/webhook-audit'
+import { Route as TriggersLinearRouteImport } from './routes/triggers/linear'
+import { Route as WebhooksGithubRouteImport } from './routes/webhooks/github'
+import { Route as WebhooksHuggingfaceRouteImport } from './routes/webhooks/huggingface'
 import { Route as ApiAiAnalyzeRouteImport } from './routes/api/ai/analyze'
 import { Route as ApiAiChatRouteImport } from './routes/api/ai/chat'
 import { Route as ApiAiGenerateRouteImport } from './routes/api/ai/generate'
@@ -81,6 +87,11 @@ const SuiteRoute = SuiteRouteImport.update({
   path: '/suite',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiConnectRoute = ApiConnectRouteImport.update({
+  id: '/api/connect',
+  path: '/api/connect',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiConnectorsRoute = ApiConnectorsRouteImport.update({
   id: '/api/connectors',
   path: '/api/connectors',
@@ -104,6 +115,31 @@ const ApiPipelineRoute = ApiPipelineRouteImport.update({
 const ApiSourceRoute = ApiSourceRouteImport.update({
   id: '/api/source',
   path: '/api/source',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiUpscaleRoute = ApiUpscaleRouteImport.update({
+  id: '/api/upscale',
+  path: '/api/upscale',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiWebhookAuditRoute = ApiWebhookAuditRouteImport.update({
+  id: '/api/webhook-audit',
+  path: '/api/webhook-audit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TriggersLinearRoute = TriggersLinearRouteImport.update({
+  id: '/triggers/linear',
+  path: '/triggers/linear',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebhooksGithubRoute = WebhooksGithubRouteImport.update({
+  id: '/webhooks/github',
+  path: '/webhooks/github',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebhooksHuggingfaceRoute = WebhooksHuggingfaceRouteImport.update({
+  id: '/webhooks/huggingface',
+  path: '/webhooks/huggingface',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAiAnalyzeRoute = ApiAiAnalyzeRouteImport.update({
@@ -148,11 +184,17 @@ export interface FileRoutesByFullPath {
   '/source': typeof SourceRoute
   '/studio': typeof StudioRoute
   '/suite': typeof SuiteRoute
+  '/api/connect': typeof ApiConnectRoute
   '/api/connectors': typeof ApiConnectorsRoute
   '/api/jobs': typeof ApiJobsRoute
   '/api/models': typeof ApiModelsRoute
   '/api/pipeline': typeof ApiPipelineRoute
   '/api/source': typeof ApiSourceRoute
+  '/api/upscale': typeof ApiUpscaleRoute
+  '/api/webhook-audit': typeof ApiWebhookAuditRoute
+  '/triggers/linear': typeof TriggersLinearRoute
+  '/webhooks/github': typeof WebhooksGithubRoute
+  '/webhooks/huggingface': typeof WebhooksHuggingfaceRoute
   '/api/ai/analyze': typeof ApiAiAnalyzeRoute
   '/api/ai/chat': typeof ApiAiChatRoute
   '/api/ai/generate': typeof ApiAiGenerateRoute
@@ -171,11 +213,17 @@ export interface FileRoutesByTo {
   '/source': typeof SourceRoute
   '/studio': typeof StudioRoute
   '/suite': typeof SuiteRoute
+  '/api/connect': typeof ApiConnectRoute
   '/api/connectors': typeof ApiConnectorsRoute
   '/api/jobs': typeof ApiJobsRoute
   '/api/models': typeof ApiModelsRoute
   '/api/pipeline': typeof ApiPipelineRoute
   '/api/source': typeof ApiSourceRoute
+  '/api/upscale': typeof ApiUpscaleRoute
+  '/api/webhook-audit': typeof ApiWebhookAuditRoute
+  '/triggers/linear': typeof TriggersLinearRoute
+  '/webhooks/github': typeof WebhooksGithubRoute
+  '/webhooks/huggingface': typeof WebhooksHuggingfaceRoute
   '/api/ai/analyze': typeof ApiAiAnalyzeRoute
   '/api/ai/chat': typeof ApiAiChatRoute
   '/api/ai/generate': typeof ApiAiGenerateRoute
@@ -195,11 +243,17 @@ export interface FileRoutesById {
   '/source': typeof SourceRoute
   '/studio': typeof StudioRoute
   '/suite': typeof SuiteRoute
+  '/api/connect': typeof ApiConnectRoute
   '/api/connectors': typeof ApiConnectorsRoute
   '/api/jobs': typeof ApiJobsRoute
   '/api/models': typeof ApiModelsRoute
   '/api/pipeline': typeof ApiPipelineRoute
   '/api/source': typeof ApiSourceRoute
+  '/api/upscale': typeof ApiUpscaleRoute
+  '/api/webhook-audit': typeof ApiWebhookAuditRoute
+  '/triggers/linear': typeof TriggersLinearRoute
+  '/webhooks/github': typeof WebhooksGithubRoute
+  '/webhooks/huggingface': typeof WebhooksHuggingfaceRoute
   '/api/ai/analyze': typeof ApiAiAnalyzeRoute
   '/api/ai/chat': typeof ApiAiChatRoute
   '/api/ai/generate': typeof ApiAiGenerateRoute
@@ -220,11 +274,17 @@ export interface FileRouteTypes {
     | '/source'
     | '/studio'
     | '/suite'
+    | '/api/connect'
     | '/api/connectors'
     | '/api/jobs'
     | '/api/models'
     | '/api/pipeline'
     | '/api/source'
+    | '/api/upscale'
+    | '/api/webhook-audit'
+    | '/triggers/linear'
+    | '/webhooks/github'
+    | '/webhooks/huggingface'
     | '/api/ai/analyze'
     | '/api/ai/chat'
     | '/api/ai/generate'
@@ -243,11 +303,17 @@ export interface FileRouteTypes {
     | '/source'
     | '/studio'
     | '/suite'
+    | '/api/connect'
     | '/api/connectors'
     | '/api/jobs'
     | '/api/models'
     | '/api/pipeline'
     | '/api/source'
+    | '/api/upscale'
+    | '/api/webhook-audit'
+    | '/triggers/linear'
+    | '/webhooks/github'
+    | '/webhooks/huggingface'
     | '/api/ai/analyze'
     | '/api/ai/chat'
     | '/api/ai/generate'
@@ -266,11 +332,17 @@ export interface FileRouteTypes {
     | '/source'
     | '/studio'
     | '/suite'
+    | '/api/connect'
     | '/api/connectors'
     | '/api/jobs'
     | '/api/models'
     | '/api/pipeline'
     | '/api/source'
+    | '/api/upscale'
+    | '/api/webhook-audit'
+    | '/triggers/linear'
+    | '/webhooks/github'
+    | '/webhooks/huggingface'
     | '/api/ai/analyze'
     | '/api/ai/chat'
     | '/api/ai/generate'
@@ -290,11 +362,17 @@ export interface RootRouteChildren {
   SourceRoute: typeof SourceRoute
   StudioRoute: typeof StudioRoute
   SuiteRoute: typeof SuiteRoute
+  ApiConnectRoute: typeof ApiConnectRoute
   ApiConnectorsRoute: typeof ApiConnectorsRoute
   ApiJobsRoute: typeof ApiJobsRoute
   ApiModelsRoute: typeof ApiModelsRoute
   ApiPipelineRoute: typeof ApiPipelineRoute
   ApiSourceRoute: typeof ApiSourceRoute
+  ApiUpscaleRoute: typeof ApiUpscaleRoute
+  ApiWebhookAuditRoute: typeof ApiWebhookAuditRoute
+  TriggersLinearRoute: typeof TriggersLinearRoute
+  WebhooksGithubRoute: typeof WebhooksGithubRoute
+  WebhooksHuggingfaceRoute: typeof WebhooksHuggingfaceRoute
   ApiAiAnalyzeRoute: typeof ApiAiAnalyzeRoute
   ApiAiChatRoute: typeof ApiAiChatRoute
   ApiAiGenerateRoute: typeof ApiAiGenerateRoute
@@ -374,6 +452,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SuiteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/connect': {
+      id: '/api/connect'
+      path: '/api/connect'
+      fullPath: '/api/connect'
+      preLoaderRoute: typeof ApiConnectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/connectors': {
       id: '/api/connectors'
       path: '/api/connectors'
@@ -407,6 +492,41 @@ declare module '@tanstack/react-router' {
       path: '/api/source'
       fullPath: '/api/source'
       preLoaderRoute: typeof ApiSourceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/upscale': {
+      id: '/api/upscale'
+      path: '/api/upscale'
+      fullPath: '/api/upscale'
+      preLoaderRoute: typeof ApiUpscaleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/webhook-audit': {
+      id: '/api/webhook-audit'
+      path: '/api/webhook-audit'
+      fullPath: '/api/webhook-audit'
+      preLoaderRoute: typeof ApiWebhookAuditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/triggers/linear': {
+      id: '/triggers/linear'
+      path: '/triggers/linear'
+      fullPath: '/triggers/linear'
+      preLoaderRoute: typeof TriggersLinearRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/webhooks/github': {
+      id: '/webhooks/github'
+      path: '/webhooks/github'
+      fullPath: '/webhooks/github'
+      preLoaderRoute: typeof WebhooksGithubRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/webhooks/huggingface': {
+      id: '/webhooks/huggingface'
+      path: '/webhooks/huggingface'
+      fullPath: '/webhooks/huggingface'
+      preLoaderRoute: typeof WebhooksHuggingfaceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ai/analyze': {
@@ -476,11 +596,17 @@ const rootRouteChildren: RootRouteChildren = {
   SourceRoute: SourceRoute,
   StudioRoute: StudioRoute,
   SuiteRoute: SuiteRoute,
+  ApiConnectRoute: ApiConnectRoute,
   ApiConnectorsRoute: ApiConnectorsRoute,
   ApiJobsRoute: ApiJobsRoute,
   ApiModelsRoute: ApiModelsRoute,
   ApiPipelineRoute: ApiPipelineRoute,
   ApiSourceRoute: ApiSourceRoute,
+  ApiUpscaleRoute: ApiUpscaleRoute,
+  ApiWebhookAuditRoute: ApiWebhookAuditRoute,
+  TriggersLinearRoute: TriggersLinearRoute,
+  WebhooksGithubRoute: WebhooksGithubRoute,
+  WebhooksHuggingfaceRoute: WebhooksHuggingfaceRoute,
   ApiAiAnalyzeRoute: ApiAiAnalyzeRoute,
   ApiAiChatRoute: ApiAiChatRoute,
   ApiAiGenerateRoute: ApiAiGenerateRoute,

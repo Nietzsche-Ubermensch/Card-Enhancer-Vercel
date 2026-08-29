@@ -1,5 +1,10 @@
-import { AI_PROVIDER_META } from "./provider";
-import { requireKey } from "./keys";
+import { firstEnv } from "../remote-auth";
+import {
+  AI_PROVIDER_META,
+  GATEWAY_BASE,
+  GATEWAY_CHAT_MODEL,
+  GATEWAY_IMAGE_MODEL,
+} from "./provider";
 import { timedFetch } from "./http";
 
 const meta = AI_PROVIDER_META.xAI;
@@ -9,6 +14,28 @@ function headers(apiKey: string) {
     "Content-Type": "application/json",
     Authorization: `Bearer ${apiKey}`,
   };
+}
+
+function transport(): { key: string; baseUrl: string; chatModel: string; imageModel: string } | null {
+  const xai = firstEnv("XAI_API_KEY", "GROK_API_KEY", "XAI_KEY", "X_AI_API_KEY");
+  if (xai) {
+    return {
+      key: xai,
+      baseUrl: meta.baseUrl,
+      chatModel: meta.chatModel,
+      imageModel: meta.imageModel,
+    };
+  }
+  const gw = firstEnv("AI_GATEWAY_API_KEY");
+  if (gw) {
+    return {
+      key: gw,
+      baseUrl: GATEWAY_BASE,
+      chatModel: GATEWAY_CHAT_MODEL,
+      imageModel: GATEWAY_IMAGE_MODEL,
+    };
+  }
+  return null;
 }
 
 export type XaiChatMessage =
@@ -27,14 +54,14 @@ export async function xaiChat(input: {
   temperature: number;
   json?: boolean;
 }): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
-  const apiKey = requireKey("xAI");
-  if (!apiKey) return { ok: false, error: "AI is not available in this environment." };
+  const t = transport();
+  if (!t) return { ok: false, error: "AI is not available in this environment." };
 
-  const res = await timedFetch(`${meta.baseUrl}/chat/completions`, {
+  const res = await timedFetch(`${t.baseUrl}/chat/completions`, {
     method: "POST",
-    headers: headers(apiKey),
+    headers: headers(t.key),
     body: JSON.stringify({
-      model: meta.chatModel,
+      model: t.chatModel,
       messages: input.messages,
       max_tokens: input.maxTokens,
       temperature: input.temperature,
@@ -51,14 +78,14 @@ export async function xaiImage(input: {
   prompt: string;
   size: "1K" | "2K";
 }): Promise<{ ok: true; image: string } | { ok: false; error: string }> {
-  const apiKey = requireKey("xAI");
-  if (!apiKey) return { ok: false, error: "AI is not available in this environment." };
+  const t = transport();
+  if (!t) return { ok: false, error: "AI is not available in this environment." };
 
-  const res = await timedFetch(`${meta.baseUrl}/images/generations`, {
+  const res = await timedFetch(`${t.baseUrl}/images/generations`, {
     method: "POST",
-    headers: headers(apiKey),
+    headers: headers(t.key),
     body: JSON.stringify({
-      model: meta.imageModel,
+      model: t.imageModel,
       prompt: input.prompt,
       n: 1,
       resolution: input.size === "2K" ? "2k" : "1k",

@@ -50,7 +50,6 @@ export function BatchWorkbench() {
   const [pipeline, setPipeline] = useState<PipelineSnapshot | null>(null);
   const [editing, setEditing] = useState<QueuedCard | null>(null);
   const [inspecting, setInspecting] = useState<QueuedCard | null>(null);
-  const samplesLoaded = useRef(false);
   const stopRef = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
@@ -103,13 +102,6 @@ export function BatchWorkbench() {
     queueFiles(files);
     addLog("Loaded 4 geometry samples · slab · vintage · chrome · relic");
   }, [addLog, queueFiles]);
-
-  useEffect(() => {
-    if (samplesLoaded.current) return;
-    if (useBatchStore.getState().cards.length > 0) return;
-    samplesLoaded.current = true;
-    void loadSamples();
-  }, [loadSamples]);
 
   const done = cards.filter((c) => c.status === ProcessingStatus.Completed).length;
   const failed = cards.filter((c) => c.status === ProcessingStatus.Failed).length;
@@ -336,9 +328,9 @@ export function BatchWorkbench() {
                 className="w-full min-h-[360px] border border-dashed border-border hover:bg-elevated/40 flex flex-col items-center justify-center gap-3 text-muted px-4"
               >
                 <Upload className="h-8 w-8" />
-                <p className="font-display text-3xl sm:text-4xl uppercase text-fg">Drop 50+ sports cards</p>
+                <p className="font-display text-3xl sm:text-4xl uppercase text-fg">Drop scans here</p>
                 <p className="micro text-center leading-relaxed">
-                  Folder or files · {MIN_BATCH_TARGET}–{MAX_BATCH} · 2.5×3.5 in · JPEG ZIP + {GIT_PIPELINE.log}
+                  Phone: tap to pick photos. Desktop: drag a folder. {MIN_BATCH_TARGET}–{MAX_BATCH} · 2.5×3.5 in · JPEG ZIP
                 </p>
               </button>
             ) : (
@@ -522,7 +514,7 @@ export function BatchWorkbench() {
                 {LINEAR_BOARD.team} · {linearCounts().open} open
               </a>
               <p className="text-xs text-muted leading-relaxed">
-                Job log for this 50+ queue. Jobs ingest Linear HMAC webhooks on Issue and Comment changes.
+                Job log for this 50+ queue. Linear posts via Connect OIDC to /triggers/linear (HMAC Nitro subscription deleted).
               </p>
               <Link to="/jobs" className="micro underline text-muted hover:text-fg">
                 Open jobs board

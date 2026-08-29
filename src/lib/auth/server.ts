@@ -32,9 +32,7 @@
 import { betterAuth } from "better-auth";
 import { bearer, genericOAuth } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
-import { connect as connectLinearBetterAuth } from "@vercel/connect/betterauth";
 import { getCookie } from "@tanstack/react-start/server";
-import { LINEAR_BETTERAUTH_PROVIDER_ID, LINEAR_CONNECT_ID } from "../connect/ids";
 import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
 import { ensureDbReady, getPglite } from "../db";
@@ -166,11 +164,6 @@ const grokOAuthPlugin = genericOAuth({
           authorizationUrlParams: { idp, prompt: "login" },
         }))
       : []),
-    connectLinearBetterAuth({
-      providerId: LINEAR_BETTERAUTH_PROVIDER_ID,
-      connector: LINEAR_CONNECT_ID,
-      scopes: ["openid", "profile", "email"],
-    }),
   ],
 });
 
@@ -199,7 +192,6 @@ export const auth = betterAuth({
       trustedProviders: [
         ...GROK_PROVIDERS.map((p) => p.providerId),
         GATE_PROVIDER_ID,
-        LINEAR_BETTERAUTH_PROVIDER_ID,
       ],
       // X's synthetic email is never "verified", so don't gate linking on the
       // local user's email-verified state.

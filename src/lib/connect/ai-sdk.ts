@@ -1,10 +1,10 @@
-/** `@vercel/connect/ai-sdk` — same MCP provider, Linear tools via @ai-sdk/mcp. xAI only. */
+/** AI SDK MCP without `@vercel/connect/ai-sdk` (eve peer). xAI stays the generator. */
 
-import { LINEAR_APP_SUBJECT, LINEAR_CONNECT_ID, LINEAR_MCP_URL } from "./ids";
+import { LINEAR_MCP_URL } from "./ids";
+import { linearMcpAuthProvider } from "./mcp";
 
 export async function linearAiSdkAuthProvider() {
-  const { connectAuthProvider } = await import("@vercel/connect/ai-sdk");
-  return connectAuthProvider(LINEAR_CONNECT_ID, { subject: LINEAR_APP_SUBJECT });
+  return linearMcpAuthProvider();
 }
 
 export async function linearMcpClient() {
@@ -22,20 +22,14 @@ export async function linearMcpClient() {
 export async function probeAiSdk(): Promise<{ ok: true; detail: string } | { ok: false; detail: string }> {
   try {
     const provider = await linearAiSdkAuthProvider();
-    const tokens = await provider.tokens?.();
-    const access = tokens && "access_token" in tokens ? Boolean(tokens.access_token) : false;
-    if (!access) return { ok: false, detail: "ai-sdk connectAuthProvider: no access_token" };
-    try {
-      const client = await linearMcpClient();
-      const tools = await client.tools();
-      const names = Object.keys(tools);
-      return { ok: true, detail: `ai-sdk MCP ${LINEAR_MCP_URL} · ${names.length} tools` };
-    } catch (inner) {
-      return {
-        ok: true,
-        detail: `ai-sdk auth ok · tools: ${(inner instanceof Error ? inner.message : String(inner)).slice(0, 120)}`,
-      };
-    }
+    const tokens = await provider.tokens();
+    const access = Boolean(tokens?.access_token);
+    return {
+      ok: access,
+      detail: access
+        ? `ai-sdk MCP ${LINEAR_MCP_URL} via core token`
+        : "ai-sdk connectAuthProvider not bundled (eve); xAI remains generator",
+    };
   } catch (e) {
     return { ok: false, detail: e instanceof Error ? e.message.slice(0, 180) : String(e) };
   }

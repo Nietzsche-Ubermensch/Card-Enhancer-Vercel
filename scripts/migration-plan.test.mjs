@@ -58,8 +58,15 @@ test("non-.sql entries are dropped (readdir also yields the auth/ directory)", (
 
 test("the auth schema ships outside the globbed directory", () => {
   const migrationsDir = join(projectRoot(), "migrations");
-  assert.deepEqual(pendingMigrations(readdirSync(migrationsDir), []), []);
-  assert.ok(readdirSync(join(migrationsDir, "auth")).includes("0001_auth.sql"));
+  const pending = pendingMigrations(readdirSync(migrationsDir), []);
+  // Auth lives in migrations/auth/ and is not globbed. Product SQL in
+  // migrations/*.sql (0002_linear_webhooks.sql) is globbed and must apply.
+  assert.ok(!pending.some((m) => m.name === AUTH_MIGRATION));
+  assert.ok(readdirSync(join(migrationsDir, "auth")).includes(AUTH_MIGRATION));
+  for (const m of pending) {
+    assert.ok(isMigrationFile(m.name), m.name);
+    assert.notEqual(m.name, AUTH_MIGRATION);
+  }
 });
 
 test("this workspace's auth schema copy is byte-identical to its source", () => {

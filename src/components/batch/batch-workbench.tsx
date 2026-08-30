@@ -69,8 +69,8 @@ export function BatchWorkbench() {
       .then((snap) => {
         if (!cancelled) setPipeline(snap);
       })
-      .catch(() => {
-        /* keep baked protocol */
+      .catch((error) => {
+        addLog(error instanceof Error ? `Pipeline status unavailable: ${error.message}` : "Pipeline status unavailable");
       });
     return () => {
       cancelled = true;
@@ -486,7 +486,7 @@ export function BatchWorkbench() {
             ))}
             <div className="panel p-3 space-y-1">
               <p className="micro text-subtle">
-                Hugging Face {pipeline?.hf.source === "live" ? "live" : "recipe"}
+                Hugging Face {pipeline?.hf.source === "live" ? "connected" : "configuration required"}
               </p>
               <a href={HF_BATCH_BACKEND.url} target="_blank" rel="noreferrer" className="text-xs underline tracking-wide break-all">
                 {pipeline?.hf.id ?? HF_BATCH_BACKEND.id}

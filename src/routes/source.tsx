@@ -22,20 +22,27 @@ export const Route = createFileRoute("/source")({ component: SourcePage });
 function SourcePage() {
   const [query, setQuery] = useState("ELAN super-resolution");
   const [repos, setRepos] = useState<GhRepo[]>(FEATURED_REPOS);
-  const [source, setSource] = useState<"featured" | "live" | "fallback">("featured");
+  const [source, setSource] = useState<"featured" | "live" | "error">("featured");
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState(FEATURED_REPOS[0]);
   const [readme, setReadme] = useState<string>("");
   const [tree, setTree] = useState<GhTreeEntry[]>([]);
   const [detailBusy, setDetailBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const runSearch = async (q: string) => {
     setBusy(true);
+    setError(null);
     try {
       const result = await searchGithubRepos({ data: { query: q } });
       setRepos(result.repos);
       setSource(result.source);
       if (result.repos[0]) setSelected(result.repos[0]);
+      if (!result.ok) setError(result.error);
+    } catch (err) {
+      setRepos([]);
+      setSource("error");
+      setError(err instanceof Error ? err.message : "GitHub search failed");
     } finally {
       setBusy(false);
     }
@@ -98,9 +105,10 @@ function SourcePage() {
             </Button>
           </form>
           <p className="micro text-subtle self-center">
-            {source === "live" ? "Live GitHub API" : "Catalog"}
+            {source === "live" ? "Live GitHub API" : source === "error" ? "Configuration required" : "Loading"}
           </p>
         </div>
+        {error && <p className="text-sm text-danger" role="alert">{error}</p>}
 
         <div className="grid lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-6 items-start">
           <div className="space-y-3">

@@ -240,12 +240,13 @@ export async function queryHfModels(input: { query: string; limit: number }) {
       headers: huggingfaceHeaders(),
       signal: AbortSignal.timeout(8000),
     });
-    if (!res.ok) return { ok: true as const, source: "fallback" as const, models: FEATURED_MODELS };
+      if (!res.ok) return { ok: false as const, source: "error" as const, models: [], error: `Hugging Face returned ${res.status}` };
     const body = (await res.json()) as Record<string, unknown>[];
     const models = body.map(mapHf).filter((m) => m.id);
-    return { ok: true as const, source: "live" as const, models: models.length ? models : FEATURED_MODELS };
-  } catch {
-    return { ok: true as const, source: "fallback" as const, models: FEATURED_MODELS };
+    if (!models.length) return { ok: false as const, source: "error" as const, models: [], error: "No models matched that search" };
+    return { ok: true as const, source: "live" as const, models };
+  } catch (error) {
+    return { ok: false as const, source: "error" as const, models: [], error: error instanceof Error ? error.message : "Hugging Face is unavailable" };
   }
 }
 
@@ -293,12 +294,13 @@ export const searchGithubRepos = createServerFn({ method: "POST" })
         headers: githubHeaders(),
         signal: AbortSignal.timeout(8000),
       });
-      if (!res.ok) return { ok: true as const, source: "fallback" as const, repos: FEATURED_REPOS };
+      if (!res.ok) return { ok: false as const, source: "error" as const, repos: [], error: `GitHub returned ${res.status}` };
       const body = (await res.json()) as { items?: Record<string, unknown>[] };
       const repos = (body.items ?? []).map(mapGh).filter((r) => r.full_name);
-      return { ok: true as const, source: "live" as const, repos: repos.length ? repos : FEATURED_REPOS };
-    } catch {
-      return { ok: true as const, source: "fallback" as const, repos: FEATURED_REPOS };
+      if (!repos.length) return { ok: false as const, source: "error" as const, repos: [], error: "No repositories matched that search" };
+      return { ok: true as const, source: "live" as const, repos };
+    } catch (error) {
+      return { ok: false as const, source: "error" as const, repos: [], error: error instanceof Error ? error.message : "GitHub is unavailable" };
     }
   });
 

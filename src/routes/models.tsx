@@ -4,7 +4,7 @@ import { ExternalLink, Loader2, Search } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FEATURED_MODELS, getUpscalerFamilies, searchHfModels, type FamilyLive, type HfModel } from "@/lib/hub";
+import { getUpscalerFamilies, searchHfModels, type FamilyLive, type HfModel } from "@/lib/hub";
 import { UPSCALER_FAMILIES } from "@/lib/upscalers";
 import { compactNumber, formatDate } from "@/lib/format";
 
@@ -14,8 +14,8 @@ const PRESETS = ["Real-ESRGAN", "ESRGAN", "SwinIR", "super resolution"];
 
 function ModelsPage() {
   const [query, setQuery] = useState("Real-ESRGAN");
-  const [models, setModels] = useState<HfModel[]>(FEATURED_MODELS);
-  const [source, setSource] = useState<"featured" | "live" | "fallback">("featured");
+  const [models, setModels] = useState<HfModel[]>([]);
+  const [source, setSource] = useState<"live" | "error">("error");
   const [families, setFamilies] = useState<FamilyLive[]>(UPSCALER_FAMILIES.map((f) => ({ ...f, live: false })));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,8 +29,8 @@ function ModelsPage() {
       setSource(result.source);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
-      setModels(FEATURED_MODELS);
-      setSource("fallback");
+      setModels([]);
+      setSource("error");
     } finally {
       setBusy(false);
     }
@@ -169,7 +169,7 @@ function ModelsPage() {
           <div className="panel p-5 space-y-2">
             <p className="micro text-subtle">Source</p>
             <p className="font-display text-2xl uppercase">
-              {source === "live" ? "Live Hub" : source === "fallback" ? "Cached catalog" : "Featured"}
+              {source === "live" ? "Live Hub" : "Configuration required"}
             </p>
             <p className="text-xs text-muted leading-relaxed tracking-wide uppercase">
               Live Hub downloads overlay the four-family rack. Queue still uses hlky/RealESRGAN_x2plus.

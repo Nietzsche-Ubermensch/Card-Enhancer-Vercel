@@ -2,21 +2,21 @@
 @import "tw-animate-css";
 
 @theme {
-  --color-bg: #0101f2;
-  --color-surface: rgba(255, 255, 255, 0.1);
-  --color-elevated: rgba(255, 255, 255, 0.16);
-  --color-fg: #ffffff;
-  --color-muted: rgba(255, 255, 255, 0.72);
-  --color-subtle: rgba(255, 255, 255, 0.5);
-  --color-accent: #ffffff;
-  --color-accent-fg: #0101f2;
-  --color-steel: #00f3ff;
-  --color-border: rgba(255, 255, 255, 0.28);
-  --color-ok: #d7f5d9;
-  --color-warn: #fff1b8;
-  --color-danger: #ffd0d0;
-  --color-paper: #ffffff;
-  --color-ink: #0101f2;
+  --color-bg: #050607;
+  --color-surface: #0d1113;
+  --color-elevated: #171d20;
+  --color-fg: #f4f7f8;
+  --color-muted: #b8c4c8;
+  --color-subtle: #8b9a9f;
+  --color-accent: #57d6ff;
+  --color-accent-fg: #031015;
+  --color-steel: #57d6ff;
+  --color-border: #405057;
+  --color-ok: #b6e6c1;
+  --color-warn: #f0d48a;
+  --color-danger: #f2a7a7;
+  --color-paper: #f4f7f8;
+  --color-ink: #050607;
   --font-sans: "Space Mono", ui-monospace, "Courier New", monospace;
   --font-mono: "Space Mono", ui-monospace, "Courier New", monospace;
   --font-display: "Playfair Display", Georgia, "Times New Roman", serif;

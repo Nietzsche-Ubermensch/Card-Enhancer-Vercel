@@ -40,6 +40,8 @@ class ValidationSuite:
         return {"images": synth_imgs, "ground_truth": gt_features}
     
     def measure_extraction_accuracy(self) -> Dict:
+        if self.ground_truth is None or not self.synth_features:
+            raise ValueError("generate_synthetic must be called before measuring accuracy")
         extractor = FeatureExtractor()
         errors = []
         for img, gt in zip(self.synth_features, self.ground_truth):

@@ -295,11 +295,12 @@ export function BatchWorkbench() {
 
             <div className="panel p-3 flex flex-wrap gap-x-4 gap-y-1 micro text-subtle">
               <span>
-                GitMCP {pipeline?.git.source === "live" ? "live" : "protocol"} · {pipeline?.git.fileCount ?? 36} files · {GIT_PIPELINE.resumeFn}
+                GitHub {pipeline?.git.source === "live" ? "connected" : "not connected"}
+                {pipeline?.git.source === "live" ? ` · ${pipeline.git.fileCount} files` : " · configure integration"}
               </span>
               <span>
-                HF {pipeline?.hf.source === "live" ? "live" : "recipe"} · {pipeline?.hf.className ?? HF_BATCH_BACKEND.className} ×
-                {pipeline?.hf.scale ?? HF_BATCH_BACKEND.scale}
+                Hugging Face {pipeline?.hf.source === "live" ? "connected" : "not connected"}
+                {pipeline?.hf.source === "live" ? ` · ${pipeline.hf.className} ×${pipeline.hf.scale}` : " · configure integration"}
               </span>
               <span>
                 Wolfram 2.5×3.5 in · {preset.width}×{preset.height}

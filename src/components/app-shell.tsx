@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { to: "/", label: "Batch", desc: "50+ sports cards · ZIP", icon: Layers },
   { to: "/jobs", label: "Jobs", desc: "Linear webhooks · JUG", icon: ListTodo },
-  { to: "/studio", label: "Inspect", desc: "Quad crop one card", icon: Crop },
+  { to: "/studio", label: "Inspect", desc: "Crop + straighten one card", icon: Crop },
   { to: "/models", label: "Models", desc: "Hugging Face upscalers", icon: Box },
   { to: "/source", label: "Source", desc: "GitHub pipeline", icon: Github },
   { to: "/score", label: "Scoring", desc: "Truth reward", icon: Scale },

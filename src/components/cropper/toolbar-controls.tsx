@@ -56,7 +56,10 @@ export function ToolbarControls({
         <div className="flex items-center justify-between pb-3 border-b border-border">
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-ok" />
-            <h3 className="text-xs font-semibold tracking-wide">Surface descratch</h3>
+            <div>
+              <h3 className="text-xs font-semibold tracking-wide">Scratch cleanup</h3>
+              <p className="mt-1 text-[11px] text-muted">Removes thin surface marks before export</p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -108,7 +111,10 @@ export function ToolbarControls({
         <div className="flex items-center justify-between pb-3 border-b border-border">
           <div className="flex items-center gap-2">
             <Sliders className="h-4 w-4 text-steel" />
-            <h3 className="text-xs font-semibold tracking-wide">Enhancements</h3>
+            <div>
+              <h3 className="text-xs font-semibold tracking-wide">Image adjustments</h3>
+              <p className="mt-1 text-[11px] text-muted">Tune the preview; export uses these settings</p>
+            </div>
           </div>
           <Button variant="ghost" size="sm" onClick={onReset}>
             <RefreshCw className="h-3 w-3" />

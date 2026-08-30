@@ -207,8 +207,8 @@ function CropperPage() {
         </div>
       )}
       <AppShell
-        title="Studio"
-        subtitle="Perspective correction · WebGL descratch · surface polish"
+        title="Inspect card"
+        subtitle="Straighten, crop, and export one card"
         onOpenShortcuts={() => setShortcutsOpen(true)}
         actions={
           <Button variant="secondary" size="sm" onClick={() => setShortcutsOpen(true)}>
@@ -219,19 +219,10 @@ function CropperPage() {
         }
       >
         <main className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
-          <div className="hidden md:flex flex-wrap items-center gap-3 text-[11px] font-mono text-muted px-1">
-            <span className="flex items-center gap-1.5">
-              <span className="kbd">Space</span> snap
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="kbd">Enter</span> export
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="kbd">G</span> grid
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="kbd">Arrows</span> nudge
-            </span>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] font-mono text-muted px-1" aria-label="Inspect actions">
+            <span>Drag corners to crop</span>
+            <span><span className="kbd">Space</span> auto-crop</span>
+            <span><span className="kbd">Enter</span> export</span>
           </div>
           {activeCard ? (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">

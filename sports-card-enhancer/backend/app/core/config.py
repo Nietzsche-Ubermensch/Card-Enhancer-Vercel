@@ -1,94 +1,89 @@
-"""Application configuration settings."""
-from pydantic_settings import BaseSettings
-from typing import Optional, Set
+"""Application configuration settings for the CardEnhance backend."""
+from __future__ import annotations
+
 from pathlib import Path
-import os
+from typing import Literal
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application configuration with environment variable support.
-    
-    Attributes:
-        APP_NAME: Application name displayed in API docs
-        APP_VERSION: Current version string
-        DEBUG: Enable debug mode for development
-        HOST: Server bind host
-        PORT: Server bind port
-        MAX_FILE_SIZE: Maximum single file size in bytes
-        MAX_BATCH_SIZE: Maximum files per batch job
-        ALLOWED_EXTENSIONS: Set of supported image extensions
-        UPLOAD_DIR: Directory for uploaded files
-        OUTPUT_DIR: Directory for processed outputs
-        TEMP_DIR: Directory for temporary files
-        MAX_IMAGE_DIMENSION: Maximum dimension for image resizing
-        DEFAULT_OUTPUT_QUALITY: Default image quality (0-100)
-        USE_GPU: Enable GPU acceleration if available
-        MODEL_CACHE_DIR: Directory for cached ML models
-        MAX_CONCURRENT_JOBS: Maximum parallel batch jobs
-        JOB_TIMEOUT: Job timeout in seconds
-    """
-    
-    # App settings
-    APP_NAME: str = "Sports Card Enhancer API"
-    APP_VERSION: str = "1.0.0"
+    """Runtime configuration with environment variable support."""
+
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
+
+    APP_NAME: str = "CardEnhance API"
+    APP_VERSION: str = "2.0.0"
     DEBUG: bool = False
-    
-    # Server settings
+
     HOST: str = "0.0.0.0"
     PORT: int = 8000
-    
-    # File upload settings
-    MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB
+
+    MAX_FILE_SIZE: int = 50 * 1024 * 1024
     MAX_BATCH_SIZE: int = 100
-    ALLOWED_EXTENSIONS: Set[str] = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp"}
-    
-    # Storage settings
-    BASE_DIR: Path = Path(".")
-    UPLOAD_DIR: Path = Path("./uploads")
-    OUTPUT_DIR: Path = Path("./outputs")
-    TEMP_DIR: Path = Path("./temp")
-    MODEL_CACHE_DIR: Path = Path("./models")
-    
-    # Processing settings
-    MAX_IMAGE_DIMENSION: int = 4096
+    MAX_IMAGE_PIXELS: int = 80_000_000
+    MAX_IMAGE_DIMENSION: int = 10_000
+    ALLOWED_EXTENSIONS: set[str] = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+    ALLOWED_MIME_TYPES: set[str] = {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/bmp",
+        "image/tiff",
+    }
+
+    STORAGE_DIR: Path = Field(default_factory=lambda: Path("./storage"))
+    SOURCE_DIR_NAME: str = "sources"
+    CARD_DIR_NAME: str = "cards"
+    EXPORT_DIR_NAME: str = "exports"
+    STATE_FILENAME: str = "state.json"
+
+    BATCH_CONCURRENCY: int = 3
+    YOLO_CONCURRENCY: int = 2
+    REAL_ESRGAN_CONCURRENCY: int = 1
+
+    CARD_SEG_MODEL_PATH: str = ""
+    CARD_SEG_DEVICE: str = "cpu"
+    CARD_SEG_CONF: float = 0.35
+    CARD_SEG_IOU: float = 0.45
+    CARD_SEG_IMGSZ: int = 1024
+
+    RECTIFY_MODE: Literal["PRESERVE_GEOMETRY", "STANDARD_5_7"] = "PRESERVE_GEOMETRY"
+    CARD_BORDER_MARGIN_RATIO: float = 0.018
+    DEFAULT_OUTPUT_FORMAT: str = "png"
     DEFAULT_OUTPUT_QUALITY: int = 95
-    
-    # AI Model settings
-    USE_GPU: bool = True
-    
-    # Batch processing
-    MAX_CONCURRENT_JOBS: int = 4
-    JOB_TIMEOUT: int = 300  # 5 minutes
-    
-    # External API tokens (optional)
-    HUGGINGFACE_API_TOKEN: Optional[str] = None
-    REPLICATE_API_TOKEN: Optional[str] = None
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-    
+    THUMBNAIL_MAX_DIMENSION: int = 360
+    PREVIEW_MAX_DIMENSION: int = 1600
+
+    DESCRATCH_MAX_MASK_PERCENT: float = 6.0
+    PROCESSING_VERSION: str = "cardenhance-2.0"
+
+    @property
+    def sources_root(self) -> Path:
+        return self.STORAGE_DIR / self.SOURCE_DIR_NAME
+
+    @property
+    def cards_root(self) -> Path:
+        return self.STORAGE_DIR / self.CARD_DIR_NAME
+
+    @property
+    def exports_root(self) -> Path:
+        return self.STORAGE_DIR / self.EXPORT_DIR_NAME
+
+    @property
+    def state_path(self) -> Path:
+        return self.STORAGE_DIR / self.STATE_FILENAME
+
     def ensure_directories(self) -> None:
-        """Create all required directories if they don't exist."""
-        for directory in [self.UPLOAD_DIR, self.OUTPUT_DIR, self.TEMP_DIR, self.MODEL_CACHE_DIR]:
+        for directory in (
+            self.STORAGE_DIR,
+            self.sources_root,
+            self.cards_root,
+            self.exports_root,
+        ):
             directory.mkdir(parents=True, exist_ok=True)
-    
-    @property
-    def upload_dir_str(self) -> str:
-        """Get upload directory as string."""
-        return str(self.UPLOAD_DIR)
-    
-    @property
-    def output_dir_str(self) -> str:
-        """Get output directory as string."""
-        return str(self.OUTPUT_DIR)
-    
-    @property
-    def temp_dir_str(self) -> str:
-        """Get temp directory as string."""
-        return str(self.TEMP_DIR)
 
 
-# Global settings instance
 settings = Settings()
 settings.ensure_directories()

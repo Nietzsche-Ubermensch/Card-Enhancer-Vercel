@@ -1,177 +1,307 @@
-"""Pydantic models for API request/response schemas."""
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-from enum import Enum
+"""Typed API and persistence schemas for CardEnhance."""
+from __future__ import annotations
+
 from datetime import datetime
+from enum import Enum
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class BlemishType(str, Enum):
-    """Types of blemishes that can be detected."""
-    SCRATCH = "scratch"
-    DUST = "dust"
-    SCUFF = "scuff"
-    PRINT_ARTIFACT = "print_artifact"
-    BORDER_DAMAGE = "border_damage"
-    HOLOGRAPHIC_DAMAGE = "holographic_damage"
+class BatchStatus(str, Enum):
+    QUEUED = "QUEUED"
+    UPLOADING = "UPLOADING"
+    PROCESSING = "PROCESSING"
+    PARTIAL_SUCCESS = "PARTIAL_SUCCESS"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
 
 
-class EnhancementType(str, Enum):
-    """Available enhancement types."""
-    BLEMISH_REMOVAL = "blemish_removal"
-    SHARPENING = "sharpening"
-    COLOR_CORRECTION = "color_correction"
-    CONTRAST_ENHANCEMENT = "contrast_enhancement"
-    NOISE_REDUCTION = "noise_reduction"
-    UPSCALING = "upscaling"
+class SourceStatus(str, Enum):
+    UPLOADING = "UPLOADING"
+    VALIDATING = "VALIDATING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
 
 
-class JobStatus(str, Enum):
-    """Job processing statuses."""
-    PENDING = "pending"
-    UPLOADING = "uploading"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
+class CardStatus(str, Enum):
+    QUEUED = "QUEUED"
+    PROCESSING = "PROCESSING"
+    READY = "READY"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
 
 
-class BlemishDetection(BaseModel):
-    """Detected blemish information."""
-    type: BlemishType
-    confidence: float = Field(..., ge=0.0, le=1.0)
-    bbox: List[int] = Field(..., description="[x, y, width, height]")
-    severity: str = Field(..., description="low, medium, high")
+class CardStage(str, Enum):
+    VALIDATING = "VALIDATING"
+    DETECTING = "DETECTING"
+    GEOMETRY = "GEOMETRY"
+    RECTIFYING = "RECTIFYING"
+    ORIENTING = "ORIENTING"
+    READY = "READY"
+    UPSCALING = "UPSCALING"
+    DESCRATCHING = "DESCRATCHING"
+    DESCRATCHING_UPSCALING = "DESCRATCHING_UPSCALING"
+    EXPORTING = "EXPORTING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    RETRYING = "RETRYING"
 
 
-class SRModelChoice(str, Enum):
-    """Super-resolution model choices for upscaling."""
-    REAL_ESRGAN_X4PLUS = "real_esrgan_x4plus"  # Best general purpose
-    REAL_ESRNET_X4PLUS = "real_esrnet_x4plus"  # Conservative, less artifacts
-    REAL_ESRGAN_ANIME = "real_esrgan_anime_6b"  # Anime/illustrations
-    REAL_ESRGAN_X2PLUS = "real_esrgan_x2plus"  # 2x faster upscaling
-    ANIME_VIDEO_V3 = "anime_video_v3"  # Lightweight for video
-    GENERAL_X4V3 = "general_x4v3"  # General with denoise control
+class ArtifactType(str, Enum):
+    ORIGINAL_SOURCE = "ORIGINAL_SOURCE"
+    RECTIFIED = "RECTIFIED"
+    UPSCALED = "UPSCALED"
+    DESCRATCHED = "DESCRATCHED"
+    DESCRATCHED_UPSCALED = "DESCRATCHED_UPSCALED"
+    OPTIMIZED = "OPTIMIZED"
 
 
-class EnhancementSettings(BaseModel):
-    """User-configurable enhancement settings."""
-    blemish_removal: bool = True
-    blemish_sensitivity: float = Field(0.7, ge=0.0, le=1.0)
-    
-    sharpening: bool = True
-    sharpening_amount: float = Field(0.5, ge=0.0, le=1.0)
-    
-    color_correction: bool = True
-    color_temperature: float = Field(0.0, ge=-1.0, le=1.0)
-    saturation: float = Field(1.0, ge=0.0, le=2.0)
-    
-    contrast_enhancement: bool = True
-    contrast_amount: float = Field(0.3, ge=0.0, le=1.0)
-    
-    noise_reduction: bool = True
-    noise_reduction_strength: float = Field(0.5, ge=0.0, le=1.0)
-    
-    upscaling: bool = False
-    upscale_factor: int = Field(2, ge=1, le=4)
-    sr_model: SRModelChoice = Field(
-        SRModelChoice.REAL_ESRGAN_X4PLUS,
-        description="Super-resolution model to use for upscaling"
-    )
-    
-    preserve_holographic: bool = True
-    output_format: str = Field("png", pattern="^(png|jpg|webp|tiff)$")
-    output_quality: int = Field(95, ge=50, le=100)
-    output_dpi: int = Field(300, ge=72, le=1200)
+class GeometryMethod(str, Enum):
+    POLYGON_QUAD = "POLYGON_QUAD"
+    MIN_AREA_RECT_FALLBACK = "MIN_AREA_RECT_FALLBACK"
+    IMAGE_BOUNDS_FALLBACK = "IMAGE_BOUNDS_FALLBACK"
 
 
-class CardImage(BaseModel):
-    """Individual card image information."""
-    id: str
-    filename: str
-    original_path: str
-    processed_path: Optional[str] = None
+class OrientationMethod(str, Enum):
+    EXIF = "EXIF"
+    OCR = "OCR"
+    LAYOUT = "LAYOUT"
+    GEOMETRY = "GEOMETRY"
+    MANUAL = "MANUAL"
+
+
+class DescratchStrength(str, Enum):
+    OFF = "off"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class BulkOperation(str, Enum):
+    UPSCALE = "upscale"
+    DESCRATCH = "descratch"
+    DESCRATCH_UPSCALE = "descratch_upscale"
+    RETRY = "retry"
+
+
+class ExportScope(str, Enum):
+    CURRENT_CARD = "current_card"
+    SELECTED_CARDS = "selected_cards"
+    ALL_COMPLETED = "all_completed"
+
+
+class ApiModel(BaseModel):
+    model_config = ConfigDict(use_enum_values=True)
+
+
+class Point(ApiModel):
+    x: float
+    y: float
+
+
+class ArtifactRecord(ApiModel):
+    artifact_id: str
+    card_id: str
+    source_id: str
+    artifact_type: ArtifactType
+    parent_artifact_id: str | None = None
     width: int
     height: int
     format: str
-    size_bytes: int
-    status: JobStatus = JobStatus.PENDING
-    progress: float = Field(0.0, ge=0.0, le=100.0)
-    detected_blemishes: List[BlemishDetection] = []
-    error_message: Optional[str] = None
-    processing_time_ms: Optional[int] = None
-
-
-class BatchJob(BaseModel):
-    """Batch job information."""
-    id: str
-    status: JobStatus
     created_at: datetime
-    updated_at: datetime
-    total_images: int
-    completed_images: int
-    failed_images: int
-    settings: EnhancementSettings
-    images: List[CardImage]
-    output_zip_path: Optional[str] = None
-    total_processing_time_ms: Optional[int] = None
-    error_message: Optional[str] = None
-
-
-class UploadResponse(BaseModel):
-    """Response for upload endpoint."""
-    job_id: str
-    status: JobStatus
-    message: str
-    total_files: int
-    accepted_files: int
-    rejected_files: int
-    rejected_reasons: List[str] = []
-
-
-class EnhancementResponse(BaseModel):
-    """Response for enhancement endpoint."""
-    job_id: str
-    status: JobStatus
-    message: str
-    estimated_time_seconds: int
-
-
-class JobStatusResponse(BaseModel):
-    """Response for job status endpoint."""
-    job_id: str
-    status: JobStatus
-    progress: float
-    total_images: int
-    completed_images: int
-    failed_images: int
-    images: List[CardImage]
-    created_at: datetime
-    updated_at: datetime
-
-
-class PreviewResponse(BaseModel):
-    """Response for preview endpoint."""
-    image_id: str
-    original_url: str
-    preview_url: str
-    detected_blemishes: List[BlemishDetection]
-    settings_applied: EnhancementSettings
-
-
-class DownloadResponse(BaseModel):
-    """Response for download endpoint."""
-    job_id: str
+    processing_version: str
+    processing_parameters: dict[str, Any] = Field(default_factory=dict)
+    relative_path: str
     download_url: str
-    expires_at: datetime
-    total_size_bytes: int
-    file_count: int
+    preview_path: str | None = None
+    preview_url: str | None = None
+    thumbnail_path: str | None = None
+    thumbnail_url: str | None = None
+    warnings: list[str] = Field(default_factory=list)
 
 
-class WebSocketProgressMessage(BaseModel):
-    """WebSocket progress update message."""
-    job_id: str
-    image_id: Optional[str]
-    status: JobStatus
-    progress: float
+class SourceRecord(ApiModel):
+    source_id: str
+    batch_id: str
+    original_filename: str
+    safe_filename: str
+    content_hash: str
+    mime_type: str
+    width: int
+    height: int
+    byte_size: int
+    status: SourceStatus
+    detected_card_count: int = 0
+    created_at: datetime
+    error_code: str | None = None
+    error_message: str | None = None
+    original_relative_path: str
+    exif_orientation: int | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CardRecord(ApiModel):
+    card_id: str
+    batch_id: str
+    source_id: str
+    source_index: int
+    display_index: int
+    detector_method: str
+    detection_confidence: float
+    polygon: list[Point]
+    corners: list[Point]
+    centroid: Point
+    geometry_method: str
+    geometry_confidence: float
+    orientation_degrees: int = 0
+    orientation_confidence: float = 0.0
+    orientation_method: str = OrientationMethod.GEOMETRY.value
+    manual_orientation_override: int | None = None
+    status: CardStatus
+    current_stage: CardStage
+    progress: float = 0.0
+    rectified_artifact_id: str | None = None
+    upscaled_artifact_id: str | None = None
+    descratched_artifact_id: str | None = None
+    descratched_upscaled_artifact_id: str | None = None
+    original_source_artifact_id: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+    error_code: str | None = None
+    error_message: str | None = None
+    retryable: bool = True
+    attempt_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+    quality: dict[str, float] = Field(default_factory=dict)
+    artifact_ids: list[str] = Field(default_factory=list)
+
+
+class BatchRecord(ApiModel):
+    batch_id: str
+    status: BatchStatus
+    source_count: int = 0
+    detected_card_count: int = 0
+    queued_count: int = 0
+    processing_count: int = 0
+    completed_count: int = 0
+    failed_count: int = 0
+    cancelled_count: int = 0
+    progress: float = 0.0
+    created_at: datetime
+    updated_at: datetime
+    source_ids: list[str] = Field(default_factory=list)
+    card_ids: list[str] = Field(default_factory=list)
+
+
+class ExportCardEntry(ApiModel):
+    card_id: str
+    source_id: str
+    source_filename: str
+    source_index: int
+    output_filename: str
+    artifact_type: str
+    width: int
+    height: int
+    orientation: int
+    detection_confidence: float
+    geometry_confidence: float
+    upscale: dict[str, Any] | None = None
+    descratch: dict[str, Any] | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ExportManifest(ApiModel):
+    export_id: str
+    created_at: datetime
+    artifact_selection: str
+    format: str
+    card_count: int
+    cards: list[ExportCardEntry]
+
+
+class ExportRecord(ApiModel):
+    export_id: str
+    batch_id: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    scope: ExportScope
+    artifact_type: ArtifactType
+    format: str
+    quality: int | None = None
+    card_ids: list[str] = Field(default_factory=list)
+    manifest: ExportManifest
+    relative_path: str
+    download_url: str
+    error_message: str | None = None
+
+
+class BatchCreateResponse(ApiModel):
+    batch: BatchRecord
+
+
+class BatchStateResponse(ApiModel):
+    batch: BatchRecord
+    sources: list[SourceRecord]
+    cards: list[CardRecord]
+
+
+class BatchCardsResponse(ApiModel):
+    batch_id: str
+    cards: list[CardRecord]
+
+
+class CardDetailResponse(ApiModel):
+    card: CardRecord
+    source: SourceRecord
+    artifacts: dict[str, ArtifactRecord | None]
+
+
+class OrientationRequest(ApiModel):
+    degrees: Literal[0, 90, 180, 270]
+
+
+class UpscaleRequest(ApiModel):
+    scale: int = Field(..., ge=2, le=4)
+
+
+class DescratchRequest(ApiModel):
+    strength: DescratchStrength
+
+
+class DescratchUpscaleRequest(ApiModel):
+    strength: DescratchStrength
+    scale: int = Field(..., ge=2, le=4)
+
+
+class ProcessSelectedRequest(ApiModel):
+    card_ids: list[str]
+    operation: BulkOperation
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExportRequest(ApiModel):
+    batch_id: str
+    scope: ExportScope
+    artifact_type: ArtifactType
+    format: str = Field(..., pattern="^(png|jpg|webp)$")
+    quality: int | None = Field(default=None, ge=50, le=100)
+    card_ids: list[str] = Field(default_factory=list)
+    current_card_id: str | None = None
+
+
+class OperationAcceptedResponse(ApiModel):
+    accepted: bool
     message: str
-    timestamp: datetime
+    batch_id: str | None = None
+    card_id: str | None = None
+    source_ids: list[str] = Field(default_factory=list)
+
+
+class ExportResponse(ApiModel):
+    export: ExportRecord

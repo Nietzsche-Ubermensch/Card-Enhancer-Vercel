@@ -1,551 +1,309 @@
-"""FastAPI main application."""
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-import os
-import shutil
-import zipfile
-import io
-import tempfile
-import uuid
+"""FastAPI application for CardEnhance."""
+from __future__ import annotations
+
+from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
-from datetime import datetime, timedelta
-import json
-import asyncio
+from typing import Literal
+
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from app.core.config import settings
 from app.models.schemas import (
-    UploadResponse, EnhancementResponse, JobStatusResponse, 
-    DownloadResponse, EnhancementSettings, JobStatus, WebSocketProgressMessage
+    ArtifactType,
+    BatchCardsResponse,
+    BatchCreateResponse,
+    BatchStateResponse,
+    CardDetailResponse,
+    DescratchRequest,
+    DescratchUpscaleRequest,
+    ExportRequest,
+    ExportResponse,
+    ExportScope,
+    OperationAcceptedResponse,
+    OrientationRequest,
+    ProcessSelectedRequest,
+    UpscaleRequest,
 )
-from app.services.batch_processor import batch_processor, Job
+from app.services.batch_processor import batch_processor
+from app.services.export_service import export_service
+from app.services.state_store import state_store
 from app.utils.image_utils import ImageProcessor
 
-
-def extract_zip_images(zip_content: bytes, extract_dir: Path) -> List[str]:
-    """
-    Extract images from a ZIP archive.
-    
-    Returns list of extracted image file paths.
-    """
-    extracted_paths = []
-    allowed_extensions = {'.jpg', '.jpeg', '.png', '.tiff', '.tif', '.bmp', '.webp'}
-    
-    with zipfile.ZipFile(io.BytesIO(zip_content), 'r') as zip_ref:
-        for file_info in zip_ref.infolist():
-            # Skip directories and hidden files
-            if file_info.is_dir() or file_info.filename.startswith('__MACOSX'):
-                continue
-            
-            # Check extension
-            filename = os.path.basename(file_info.filename)
-            if filename.startswith('.'):
-                continue
-                
-            ext = os.path.splitext(filename)[1].lower()
-            if ext not in allowed_extensions:
-                continue
-            
-            # Check file size (skip files > 50MB)
-            if file_info.file_size > settings.MAX_FILE_SIZE:
-                continue
-            
-            # Extract file
-            try:
-                # Create a safe filename (avoid path traversal)
-                safe_filename = os.path.basename(filename)
-                extract_path = extract_dir / safe_filename
-                
-                # Handle duplicate filenames
-                base, ext = os.path.splitext(safe_filename)
-                counter = 1
-                while extract_path.exists():
-                    extract_path = extract_dir / f"{base}_{counter}{ext}"
-                    counter += 1
-                
-                with zip_ref.open(file_info) as source, open(extract_path, 'wb') as target:
-                    shutil.copyfileobj(source, target)
-                
-                extracted_paths.append(str(extract_path))
-            except Exception:
-                continue
-    
-    return extracted_paths
-
-# Create FastAPI app
-app = FastAPI(
-    title=settings.APP_NAME,
-    version=settings.APP_VERSION,
-    description="AI-powered sports card image enhancement API",
-    docs_url="/docs",
-    redoc_url="/redoc"
-)
-
-# CORS middleware
+app = FastAPI(title=settings.APP_NAME, version=settings.APP_VERSION)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Mount static files for outputs
-settings.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/outputs", StaticFiles(directory=str(settings.OUTPUT_DIR)), name="outputs")
 
-# Store active WebSocket connections
-active_connections: dict = {}
+def _card_has_artifact(card, artifact_type: ArtifactType) -> bool:
+    mapping = {
+        ArtifactType.ORIGINAL_SOURCE: card.original_source_artifact_id,
+        ArtifactType.RECTIFIED: card.rectified_artifact_id,
+        ArtifactType.UPSCALED: card.upscaled_artifact_id,
+        ArtifactType.DESCRATCHED: card.descratched_artifact_id,
+        ArtifactType.DESCRATCHED_UPSCALED: card.descratched_upscaled_artifact_id,
+        ArtifactType.OPTIMIZED: None,
+    }
+    return bool(mapping.get(artifact_type))
 
 
 @app.on_event("startup")
-async def startup_event():
-    """Start the batch processor on startup."""
+async def startup_event() -> None:
     await batch_processor.start()
 
 
 @app.on_event("shutdown")
-async def shutdown_event():
-    """Stop the batch processor on shutdown."""
+async def shutdown_event() -> None:
     await batch_processor.stop()
 
 
 @app.get("/")
-async def root():
-    """Root endpoint."""
+async def root() -> dict[str, object]:
     return {
         "name": settings.APP_NAME,
         "version": settings.APP_VERSION,
         "status": "running",
-        "endpoints": {
-            "docs": "/docs",
-            "upload": "/upload",
-            "enhance": "/enhance",
-            "status": "/status/{job_id}",
-            "download": "/download/{job_id}",
-            "preview": "/preview",
-            "websocket": "/ws/{job_id}"
-        }
+        "storage": str(settings.STORAGE_DIR),
     }
 
 
-@app.post("/upload", response_model=UploadResponse)
-async def upload_images(
-    files: List[UploadFile] = File(...),
-    settings_json: Optional[str] = Form(None)
-):
-    """
-    Upload images for enhancement.
-    
-    - **files**: Single or multiple image files (.jpg, .png, .tiff, .bmp)
-    - **settings_json**: Optional JSON string with enhancement settings
-    """
-    # Parse settings
-    enhancement_settings = EnhancementSettings()
-    if settings_json:
-        try:
-            settings_dict = json.loads(settings_json)
-            enhancement_settings = EnhancementSettings(**settings_dict)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Invalid settings JSON: {e}")
-    
-    # Validate files
-    accepted_files = []
-    rejected_files = []
-    rejected_reasons = []
-    saved_paths = []
-    
-    # Create upload directory with job_id
-    job_id = str(uuid.uuid4())
-    upload_dir = Path(settings.UPLOAD_DIR) / job_id
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    
-    for file in files:
-        # Check file extension
-        ext = os.path.splitext(file.filename)[1].lower()
-        if ext not in settings.ALLOWED_EXTENSIONS:
-            rejected_files.append(file.filename)
-            rejected_reasons.append(f"{file.filename}: Unsupported format {ext}")
-            continue
-        
-        # Check file size
-        content = await file.read()
-        if len(content) > settings.MAX_FILE_SIZE:
-            rejected_files.append(file.filename)
-            rejected_reasons.append(f"{file.filename}: File too large")
-            continue
-        
-        # Save file
-        try:
-            file_path = upload_dir / file.filename
-            
-            # Handle duplicate filenames
-            base, ext = os.path.splitext(file.filename)
-            counter = 1
-            while file_path.exists():
-                file_path = upload_dir / f"{base}_{counter}{ext}"
-                counter += 1
-            
-            with open(file_path, "wb") as f:
-                f.write(content)
-            
-            accepted_files.append(file.filename)
-            saved_paths.append(str(file_path))
-        
-        except Exception as e:
-            rejected_files.append(file.filename)
-            rejected_reasons.append(f"{file.filename}: Save failed - {str(e)}")
-    
-    if not accepted_files:
-        raise HTTPException(status_code=400, detail="No valid files uploaded")
-    
-    return UploadResponse(
-        job_id=job_id,
-        status=JobStatus.PENDING,
-        message=f"Uploaded {len(accepted_files)} files successfully",
-        total_files=len(files),
-        accepted_files=len(accepted_files),
-        rejected_files=len(rejected_files),
-        rejected_reasons=rejected_reasons
+@app.post("/api/batches", response_model=BatchCreateResponse)
+async def create_batch() -> BatchCreateResponse:
+    batch = await batch_processor.create_batch()
+    return BatchCreateResponse(batch=batch)
+
+
+@app.post("/api/batches/{batch_id}/sources", response_model=OperationAcceptedResponse)
+async def add_sources(batch_id: str, files: list[UploadFile] = File(...)) -> OperationAcceptedResponse:
+    uploads: list[tuple[str, bytes, str | None]] = []
+    for upload in files:
+        uploads.append((upload.filename or "upload", await upload.read(), upload.content_type))
+    source_ids = await batch_processor.add_sources_to_batch(batch_id, uploads)
+    return OperationAcceptedResponse(
+        accepted=True,
+        message=f"Added {len(source_ids)} source files to batch.",
+        batch_id=batch_id,
+        source_ids=source_ids,
     )
 
 
-@app.post("/enhance", response_model=EnhancementResponse)
-async def enhance_images(
-    background_tasks: BackgroundTasks,
-    files: List[UploadFile] = File(...),
-    settings_json: Optional[str] = Form(None)
-):
-    """
-    Upload and enhance images in one request.
-    
-    - **files**: Single or multiple image files, or ZIP archives containing images
-    - **settings_json**: JSON string with enhancement settings
-    """
-    # Parse settings
-    enhancement_settings = EnhancementSettings()
-    if settings_json:
-        try:
-            settings_dict = json.loads(settings_json)
-            enhancement_settings = EnhancementSettings(**settings_dict)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Invalid settings JSON: {e}")
-    
-    # Process and save uploaded files
-    saved_paths = []
-    temp_dir = settings.TEMP_DIR / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Extended allowed extensions including ZIP
-    allowed_extensions = settings.ALLOWED_EXTENSIONS | {".zip"}
-    
-    for file in files:
-        ext = os.path.splitext(file.filename)[1].lower()
-        if ext not in allowed_extensions:
-            continue
-        
-        content = await file.read()
-        
-        # Handle ZIP files
-        if ext == ".zip":
-            # Check ZIP size (allow up to 500MB for ZIPs)
-            max_zip_size = settings.MAX_FILE_SIZE * 10
-            if len(content) > max_zip_size:
-                continue
-            
-            # Extract images from ZIP
-            try:
-                extracted_paths = extract_zip_images(content, temp_dir)
-                saved_paths.extend(extracted_paths)
-            except zipfile.BadZipFile:
-                continue
-            except Exception:
-                continue
-        else:
-            # Regular image file
-            if len(content) > settings.MAX_FILE_SIZE:
-                continue
-            
-            file_path = temp_dir / file.filename
-            with open(file_path, "wb") as f:
-                f.write(content)
-            
-            saved_paths.append(str(file_path))
-    
-    if not saved_paths:
-        raise HTTPException(status_code=400, detail="No valid files to process")
-    
-    # Limit batch size
-    if len(saved_paths) > settings.MAX_BATCH_SIZE:
-        saved_paths = saved_paths[:settings.MAX_BATCH_SIZE]
-    
-    # Submit batch job
-    job_id = await batch_processor.submit_job(saved_paths, enhancement_settings)
-    
-    # Estimate processing time (rough estimate: 5 seconds per image)
-    estimated_time = len(saved_paths) * 5
-    
-    return EnhancementResponse(
-        job_id=job_id,
-        status=JobStatus.PENDING,
-        message=f"Enhancement job submitted with {len(saved_paths)} images",
-        estimated_time_seconds=estimated_time
+@app.get("/api/batches/{batch_id}", response_model=BatchStateResponse)
+async def get_batch(batch_id: str) -> BatchStateResponse:
+    batch, sources, cards = await batch_processor.get_batch_state(batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    refreshed = await state_store.update_batch_state(batch_id)
+    return BatchStateResponse(batch=refreshed or batch, sources=sources, cards=cards)
+
+
+@app.get("/api/batches/{batch_id}/cards", response_model=BatchCardsResponse)
+async def get_batch_cards(batch_id: str) -> BatchCardsResponse:
+    cards = await state_store.get_cards_for_batch(batch_id)
+    return BatchCardsResponse(batch_id=batch_id, cards=cards)
+
+
+@app.post("/api/sources/{source_id}/retry", response_model=OperationAcceptedResponse)
+async def retry_source(source_id: str) -> OperationAcceptedResponse:
+    source = await state_store.get_source(source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+    await batch_processor.retry_source(source_id)
+    return OperationAcceptedResponse(accepted=True, message="Source retry queued.", batch_id=source.batch_id, source_ids=[source_id])
+
+
+@app.post("/api/sources/{source_id}/cancel", response_model=OperationAcceptedResponse)
+async def cancel_source(source_id: str) -> OperationAcceptedResponse:
+    source = await state_store.get_source(source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+    await batch_processor.cancel_source(source_id)
+    return OperationAcceptedResponse(accepted=True, message="Source cancelled.", batch_id=source.batch_id, source_ids=[source_id])
+
+
+@app.post("/api/batches/{batch_id}/process-selected", response_model=OperationAcceptedResponse)
+async def process_selected(batch_id: str, request: ProcessSelectedRequest) -> OperationAcceptedResponse:
+    await batch_processor.process_selected_cards(batch_id, request.card_ids, str(request.operation), request.parameters)
+    return OperationAcceptedResponse(
+        accepted=True,
+        message=f"Queued {request.operation} for {len(request.card_ids)} cards.",
+        batch_id=batch_id,
     )
 
 
-@app.get("/status/{job_id}", response_model=JobStatusResponse)
-async def get_job_status(job_id: str):
-    """Get the status of a batch job."""
-    job = await batch_processor.get_job(job_id)
-    
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
-    batch_job = batch_processor.to_batch_job(job)
-    
-    return JobStatusResponse(
-        job_id=batch_job.id,
-        status=batch_job.status,
-        progress=job.progress,
-        total_images=batch_job.total_images,
-        completed_images=batch_job.completed_images,
-        failed_images=batch_job.failed_images,
-        images=batch_job.images,
-        created_at=batch_job.created_at,
-        updated_at=batch_job.updated_at
+@app.post("/api/batches/{batch_id}/retry-failed", response_model=OperationAcceptedResponse)
+async def retry_failed_batch(batch_id: str) -> OperationAcceptedResponse:
+    await batch_processor.retry_failed_batch(batch_id)
+    return OperationAcceptedResponse(accepted=True, message="Queued retries for failed sources and cards.", batch_id=batch_id)
+
+
+@app.get("/api/cards/{card_id}", response_model=CardDetailResponse)
+async def get_card(card_id: str) -> CardDetailResponse:
+    card = await state_store.get_card(card_id)
+    if card is None:
+        raise HTTPException(status_code=404, detail="Card not found")
+    source = await state_store.get_source(card.source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+    artifacts = {artifact.artifact_type: artifact for artifact in await state_store.get_artifacts_for_card(card_id)}
+    return CardDetailResponse(card=card, source=source, artifacts={
+        ArtifactType.ORIGINAL_SOURCE.value: artifacts.get(ArtifactType.ORIGINAL_SOURCE.value),
+        ArtifactType.RECTIFIED.value: artifacts.get(ArtifactType.RECTIFIED.value),
+        ArtifactType.UPSCALED.value: artifacts.get(ArtifactType.UPSCALED.value),
+        ArtifactType.DESCRATCHED.value: artifacts.get(ArtifactType.DESCRATCHED.value),
+        ArtifactType.DESCRATCHED_UPSCALED.value: artifacts.get(ArtifactType.DESCRATCHED_UPSCALED.value),
+    })
+
+
+@app.post("/api/cards/{card_id}/orientation", response_model=OperationAcceptedResponse)
+async def rotate_card(card_id: str, request: OrientationRequest) -> OperationAcceptedResponse:
+    card = await state_store.get_card(card_id)
+    if card is None or card.rectified_artifact_id is None:
+        raise HTTPException(status_code=404, detail="Card or rectified artifact not found")
+    rectified_artifact = await state_store.get_artifact(card.rectified_artifact_id)
+    source = await state_store.get_source(card.source_id)
+    if rectified_artifact is None or source is None:
+        raise HTTPException(status_code=404, detail="Card artifacts are unavailable")
+    image = ImageProcessor.load_image(settings.STORAGE_DIR / rectified_artifact.relative_path)
+    from app.services.card_detection import card_detector
+    rotated = card_detector.apply_manual_orientation(image, request.degrees)
+    updated_artifact = await batch_processor.save_artifact(
+        card=card,
+        source=source,
+        image=rotated,
+        artifact_type=ArtifactType.RECTIFIED,
+        parent_artifact_id=card.original_source_artifact_id,
+        processing_parameters={
+            "orientation_degrees": request.degrees,
+            "orientation_confidence": 1.0,
+            "orientation_method": "MANUAL",
+        },
+        extension=settings.DEFAULT_OUTPUT_FORMAT,
     )
+    card.rectified_artifact_id = updated_artifact.artifact_id
+    card.manual_orientation_override = request.degrees
+    card.orientation_degrees = request.degrees
+    card.orientation_confidence = 1.0
+    card.orientation_method = "MANUAL"
+    card.updated_at = datetime.utcnow()
+    await state_store.upsert_card(card)
+    return OperationAcceptedResponse(accepted=True, message="Updated card orientation.", card_id=card_id, batch_id=card.batch_id)
 
 
-@app.get("/download/{job_id}", response_model=DownloadResponse)
-async def download_results(job_id: str):
-    """Download enhanced images for a completed job."""
-    job = await batch_processor.get_job(job_id)
-    
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
-    if job.status != JobStatus.COMPLETED:
-        raise HTTPException(status_code=400, detail=f"Job is not completed (status: {job.status})")
-    
-    # Determine download file
-    if len(job.image_paths) > 1:
-        # Return ZIP archive
-        zip_path = settings.OUTPUT_DIR / f"{job_id}.zip"
-        if zip_path.exists():
-            download_url = f"/outputs/{job_id}.zip"
-            total_size = zip_path.stat().st_size
-            file_count = len(job.image_paths)
-        else:
-            raise HTTPException(status_code=500, detail="ZIP archive not found")
-    else:
-        # Return single file
-        result = list(job.results.values())[0] if job.results else None
-        if result and result.get('output_path'):
-            output_path = Path(result['output_path'])
-            filename = output_path.name
-            download_url = f"/outputs/{job_id}/{filename}"
-            total_size = output_path.stat().st_size
-            file_count = 1
-        else:
-            raise HTTPException(status_code=500, detail="Output file not found")
-    
-    return DownloadResponse(
-        job_id=job_id,
-        download_url=download_url,
-        expires_at=datetime.now() + timedelta(hours=24),
-        total_size_bytes=total_size,
-        file_count=file_count
+@app.post("/api/cards/{card_id}/upscale", response_model=OperationAcceptedResponse)
+async def upscale_card(card_id: str, request: UpscaleRequest) -> OperationAcceptedResponse:
+    card = await state_store.get_card(card_id)
+    if card is None:
+        raise HTTPException(status_code=404, detail="Card not found")
+    await batch_processor.process_selected_cards(card.batch_id, [card_id], "upscale", {"scale": request.scale})
+    return OperationAcceptedResponse(accepted=True, message="Upscale queued.", card_id=card_id, batch_id=card.batch_id)
+
+
+@app.post("/api/cards/{card_id}/descratch", response_model=OperationAcceptedResponse)
+async def descratch_card(card_id: str, request: DescratchRequest) -> OperationAcceptedResponse:
+    card = await state_store.get_card(card_id)
+    if card is None:
+        raise HTTPException(status_code=404, detail="Card not found")
+    await batch_processor.process_selected_cards(card.batch_id, [card_id], "descratch", {"strength": str(request.strength)})
+    return OperationAcceptedResponse(accepted=True, message="Descratch queued.", card_id=card_id, batch_id=card.batch_id)
+
+
+@app.post("/api/cards/{card_id}/descratch-upscale", response_model=OperationAcceptedResponse)
+async def descratch_upscale_card(card_id: str, request: DescratchUpscaleRequest) -> OperationAcceptedResponse:
+    card = await state_store.get_card(card_id)
+    if card is None:
+        raise HTTPException(status_code=404, detail="Card not found")
+    await batch_processor.process_selected_cards(
+        card.batch_id,
+        [card_id],
+        "descratch_upscale",
+        {"strength": str(request.strength), "scale": request.scale},
     )
+    return OperationAcceptedResponse(accepted=True, message="Descratch + upscale queued.", card_id=card_id, batch_id=card.batch_id)
 
 
-@app.get("/download/{job_id}/file")
-async def download_file(job_id: str):
-    """Direct file download endpoint."""
-    job = await batch_processor.get_job(job_id)
-    
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
-    if len(job.image_paths) > 1:
-        # Return ZIP
-        zip_path = settings.OUTPUT_DIR / f"{job_id}.zip"
-        if zip_path.exists():
-            return FileResponse(
-                str(zip_path),
-                media_type="application/zip",
-                filename=f"enhanced_cards_{job_id}.zip"
-            )
-    else:
-        # Return single image
-        result = list(job.results.values())[0] if job.results else None
-        if result and result.get('output_path'):
-            output_path = Path(result['output_path'])
-            ext = output_path.suffix.lower()
-            media_type = "image/png" if ext == ".png" else "image/jpeg"
-            return FileResponse(
-                str(output_path),
-                media_type=media_type,
-                filename=output_path.name
-            )
-    
-    raise HTTPException(status_code=404, detail="File not found")
+@app.post("/api/cards/{card_id}/retry", response_model=OperationAcceptedResponse)
+async def retry_card(card_id: str) -> OperationAcceptedResponse:
+    card = await state_store.get_card(card_id)
+    if card is None:
+        raise HTTPException(status_code=404, detail="Card not found")
+    await batch_processor.process_selected_cards(card.batch_id, [card_id], "retry", {})
+    return OperationAcceptedResponse(accepted=True, message="Retry queued.", card_id=card_id, batch_id=card.batch_id)
 
 
-@app.post("/preview")
-async def generate_preview(
-    file: UploadFile = File(...),
-    settings_json: Optional[str] = Form(None)
-):
-    """
-    Generate a quick preview of enhancement settings.
-    
-    Returns a lower-quality preview for faster feedback.
-    """
-    # Parse settings
-    enhancement_settings = EnhancementSettings()
-    if settings_json:
-        try:
-            settings_dict = json.loads(settings_json)
-            enhancement_settings = EnhancementSettings(**settings_dict)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Invalid settings JSON: {e}")
-    
-    # Save uploaded file temporarily
-    ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in settings.ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Unsupported file format")
-    
-    content = await file.read()
-    temp_filename = f"preview_{datetime.now().strftime('%Y%m%d%H%M%S')}{ext}"
-    temp_path = settings.TEMP_DIR / temp_filename
-    
-    with open(temp_path, "wb") as f:
-        f.write(content)
-    
-    try:
-        # Generate preview
-        from app.services.enhancement_service import EnhancementService
-        service = EnhancementService()
-        
-        preview_image, blemishes = service.generate_preview(
-            str(temp_path), 
-            enhancement_settings,
-            max_size=1024
+@app.post("/api/exports", response_model=ExportResponse)
+async def create_export(request: ExportRequest) -> ExportResponse:
+    scope = ExportScope(str(request.scope))
+    artifact_type = ArtifactType(str(request.artifact_type))
+    if scope == ExportScope.CURRENT_CARD:
+        if not request.current_card_id:
+            raise HTTPException(status_code=400, detail="Current card export requires current_card_id.")
+        export_record = await export_service.export_single_card(
+            request.batch_id,
+            request.current_card_id,
+            artifact_type,
+            request.format,
+            request.quality,
         )
-        
-        # Save preview
-        preview_path = temp_path.with_name(f"{temp_path.stem}_preview{ext}")
-        ImageProcessor.save_image(preview_image, str(preview_path), quality=85)
-        
-        # Return file
-        media_type = "image/png" if ext == ".png" else "image/jpeg"
-        return FileResponse(
-            str(preview_path),
-            media_type=media_type,
-            filename=f"preview_{file.filename}"
+    else:
+        batch_cards = await state_store.get_cards_for_batch(request.batch_id)
+        if scope == ExportScope.SELECTED_CARDS:
+            card_ids = request.card_ids
+        else:
+            card_ids = [card.card_id for card in batch_cards if _card_has_artifact(card, artifact_type)]
+        export_record = await export_service.create_bulk_export(
+            batch_id=request.batch_id,
+            scope=scope,
+            artifact_type=artifact_type,
+            fmt=request.format,
+            quality=request.quality,
+            card_ids=card_ids,
         )
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Preview generation failed: {str(e)}")
-    
-    finally:
-        # Cleanup temp files
-        if temp_path.exists():
-            temp_path.unlink()
-        preview_path_candidate = temp_path.with_name(f"{temp_path.stem}_preview{ext}")
-        if preview_path_candidate.exists():
-            preview_path_candidate.unlink()
+    return ExportResponse(export=export_record)
 
 
-@app.websocket("/ws/{job_id}")
-async def websocket_endpoint(websocket: WebSocket, job_id: str):
-    """WebSocket endpoint for real-time job progress updates."""
-    await websocket.accept()
-    
-    # Store connection
-    if job_id not in active_connections:
-        active_connections[job_id] = []
-    active_connections[job_id].append(websocket)
-    
-    # Register progress callback
-    async def progress_callback(message: WebSocketProgressMessage):
-        await websocket.send_json(message.dict())
-    
-    batch_processor.register_progress_callback(job_id, progress_callback)
-    
-    try:
-        # Send initial status
-        job = await batch_processor.get_job(job_id)
-        if job:
-            await websocket.send_json({
-                "job_id": job_id,
-                "status": job.status.value,
-                "progress": job.progress,
-                "message": "Connected"
-            })
-        
-        # Keep connection alive and handle client messages
-        while True:
-            data = await websocket.receive_text()
-            message = json.loads(data)
-            
-            if message.get("action") == "cancel":
-                success = await batch_processor.cancel_job(job_id)
-                await websocket.send_json({
-                    "job_id": job_id,
-                    "action": "cancel",
-                    "success": success
-                })
-    
-    except WebSocketDisconnect:
-        pass
-    
-    finally:
-        # Cleanup
-        batch_processor.unregister_progress_callback(job_id, progress_callback)
-        if job_id in active_connections:
-            active_connections[job_id] = [
-                ws for ws in active_connections[job_id] 
-                if ws != websocket
-            ]
+@app.get("/api/exports/{export_id}", response_model=ExportResponse)
+async def get_export(export_id: str) -> ExportResponse:
+    export_record = await state_store.get_export(export_id)
+    if export_record is None:
+        raise HTTPException(status_code=404, detail="Export not found")
+    return ExportResponse(export=export_record)
 
 
-@app.delete("/jobs/{job_id}")
-async def delete_job(job_id: str):
-    """Delete a job and its associated files."""
-    job = await batch_processor.get_job(job_id)
-    
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
-    # Cancel if still processing
-    if job.status in [JobStatus.PENDING, JobStatus.PROCESSING]:
-        await batch_processor.cancel_job(job_id)
-    
-    # Remove output directory
-    output_dir = Path(job.output_dir)
-    if output_dir.exists():
-        shutil.rmtree(output_dir)
-    
-    # Remove ZIP if exists
-    zip_path = settings.OUTPUT_DIR / f"{job_id}.zip"
-    if zip_path.exists():
-        zip_path.unlink()
-    
-    # Remove from processor
-    if job_id in batch_processor.jobs:
-        del batch_processor.jobs[job_id]
-    
-    return {"message": f"Job {job_id} deleted successfully"}
+@app.get("/api/exports/{export_id}/download")
+async def download_export(export_id: str) -> FileResponse:
+    export_record = await state_store.get_export(export_id)
+    if export_record is None:
+        raise HTTPException(status_code=404, detail="Export not found")
+    path = settings.STORAGE_DIR / export_record.relative_path
+    media_type = "application/zip" if path.suffix == ".zip" else f"image/{path.suffix.lstrip('.')}"
+    return FileResponse(path, media_type=media_type, filename=path.name)
+
+
+@app.get("/api/artifacts/{artifact_id}/download")
+async def download_artifact(artifact_id: str, variant: Literal["full", "preview", "thumbnail"] = "full") -> FileResponse:
+    artifact = await state_store.get_artifact(artifact_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    path_value = artifact.relative_path
+    if variant == "preview" and artifact.preview_path:
+        path_value = artifact.preview_path
+    elif variant == "thumbnail" and artifact.thumbnail_path:
+        path_value = artifact.thumbnail_path
+    path = settings.STORAGE_DIR / path_value
+    media_type = "image/webp" if path.suffix == ".webp" else f"image/{path.suffix.lstrip('.')}"
+    return FileResponse(path, media_type=media_type, filename=path.name)
 
 
 @app.get("/health")
-async def health_check():
-    """Health check endpoint."""
+async def health_check() -> dict[str, object]:
     return {
         "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "version": settings.APP_VERSION
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": settings.APP_VERSION,
     }

@@ -1,4 +1,3 @@
-```
 # Python
 __pycache__/
 *.py[cod]
@@ -6,10 +5,8 @@ __pycache__/
 *.so
 .Python
 build/
-develop-eggs/
 dist/
 downloads/
-eggs/
 .eggs/
 /lib/
 lib64/
@@ -24,6 +21,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.venv/
 
 # Environment
 .env
@@ -39,16 +37,22 @@ venv.bak/
 *.swp
 *.swo
 
-# Coverage
+# Coverage and testing
 .coverage
 coverage/
 htmlcov/
-
-# Testing
 .pytest_cache/
 .mypy_cache/
+
+# Node
+node_modules/
+
+# App/runtime artifacts
+sports-card-enhancer/app/node_modules/
+sports-card-enhancer/backend/.venv/
+sports-card-enhancer/backend/storage/
+sports-card-enhancer/app/package-lock.json
 
 # OS
 .DS_Store
 Thumbs.db
-```

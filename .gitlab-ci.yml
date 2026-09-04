@@ -1,0 +1,95 @@
+# GitLab CI/CD + Hugging Face publish for Card-Enhancer-Vercel
+# Stages: lint -> test -> publish_space
+# Auth: HF_TOKEN CI variable (OIDC optional)
+
+variables:
+  PIP_CACHE_DIR: "${CI_PROJECT_DIR}/.cache/pip"
+  HF_HUB_CACHE: "${CI_PROJECT_DIR}/.cache/huggingface"
+  PYTHONUNBUFFERED: "1"
+  HF_HUB_DISABLE_UPDATE_CHECK: "1"
+  HF_HOME: "${CI_PROJECT_DIR}/.cache/huggingface"
+
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - .cache/pip
+    - .cache/huggingface/hub
+
+stages:
+  - lint
+  - test
+  - publish_space
+
+.base_linux: &base_linux
+  image: python:3.11-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq git curl
+    - pip install --upgrade pip
+    - pip install --cache-dir="$PIP_CACHE_DIR" ruff pytest huggingface_hub
+
+lint:
+  <<: *base_linux
+  stage: lint
+  script:
+    - ruff check hf-space
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "source-of-truth"'
+    - if: '$CI_COMMIT_TAG'
+
+unit_tests:
+  <<: *base_linux
+  stage: test
+  script:
+    - apt-get update -qq && apt-get install -y -qq libgl1 libglib2.0-0
+    - pip install --cache-dir="$PIP_CACHE_DIR" -r sports-card-enhancer/backend/requirements.txt
+    - export PYTHONPATH="$CI_PROJECT_DIR/sports-card-enhancer/backend"
+    - pytest sports-card-enhancer/backend/tests -v --tb=short --junitxml=report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+    paths:
+      - report.xml
+    expire_in: 7 days
+  allow_failure: false
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "source-of-truth"'
+    - if: '$CI_COMMIT_TAG'
+
+publish_space:
+  <<: *base_linux
+  stage: publish_space
+  id_tokens:
+    HF_ID_TOKEN:
+      aud: https://huggingface.co
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq curl
+    - curl -LsSf https://hf.co/cli/install.sh | bash
+    - export PATH="$HOME/.local/bin:$PATH"
+  script:
+    - echo "Publishing Gradio Space to Hugging Face..."
+    - |
+      if [ -n "$HF_TOKEN" ]; then
+        hf upload "$HF_SPACE_REPO" ./hf-space . --repo-type space \
+          --commit-message "Deploy Space from GitLab ${CI_COMMIT_SHA:0:7}"
+      elif [ -n "$HF_ID_TOKEN" ]; then
+        HF_OIDC_ID_TOKEN="$HF_ID_TOKEN" HF_OIDC_RESOURCE="$HF_SPACE_REPO" \
+          hf upload "$HF_SPACE_REPO" ./hf-space . --repo-type space \
+            --commit-message "Deploy Space from GitLab ${CI_COMMIT_SHA:0:7}"
+      else
+        echo "ERROR: Neither HF_TOKEN nor HF_ID_TOKEN is set."
+        exit 1
+      fi
+  environment:
+    name: huggingface-space
+    url: https://huggingface.co/spaces/${HF_SPACE_REPO}
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "source-of-truth"'
+    - if: '$CI_COMMIT_TAG'
+  resource_group: huggingface
+  interruptible: true
